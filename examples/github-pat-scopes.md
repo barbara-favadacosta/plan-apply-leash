@@ -13,7 +13,7 @@ which is what makes the two-env design actually safer than classic PATs.
 Goal: let the research agent investigate any repo in your org(s) without
 being able to write anything.
 
-- **Token name**: `leash-research`
+- **Token name**: `gh-research` *(matches the `gh-research.token` file you save it to)*
 - **Resource owner**: your GitHub username **and/or** each org you want to research
 - **Expiration**: 30 or 90 days (rotate regularly)
 - **Repository access**: **All repositories**
@@ -38,7 +38,7 @@ reading code you already have read access to.
 Goal: let the apply agent push commits, open PRs, and modify files **only
 on a small set of repos** corresponding to your plans' `scope.repos`.
 
-- **Token name**: `leash-apply`
+- **Token name**: `gh-apply` *(matches the `gh-apply.token` file you save it to)*
 - **Resource owner**: the org or user that owns the target repos
 - **Expiration**: 30 days max (rotate aggressively — this one has write power)
 - **Repository access**: **Only select repositories** → pick exactly the repos
@@ -67,8 +67,8 @@ Write each token to its own file (outside the repo) and point `creds.env` at
 the paths — `creds.env` itself never holds token text:
 
 ```bash
-printf '%s' 'github_pat_READ...'  > ~/.config/plan-apply-leash/gh-research.token
-printf '%s' 'github_pat_WRITE...' > ~/.config/plan-apply-leash/gh-apply.token
+printf '%s' '<github_pat_token_READ_value>'  > ~/.config/plan-apply-leash/gh-research.token
+printf '%s' '<github_pat_token_WRITE_value>' > ~/.config/plan-apply-leash/gh-apply.token
 chmod 600 ~/.config/plan-apply-leash/gh-*.token
 
 # in ~/.config/plan-apply-leash/creds.env:

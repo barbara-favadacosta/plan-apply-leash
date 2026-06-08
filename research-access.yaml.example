@@ -16,7 +16,7 @@
 #
 # Read-only is YOURS to guarantee. The harness mounts read-only on the
 # filesystem side, but it cannot prove the credential itself is read-only.
-# Scope it like production IAM (see examples/iam-research-policy.json).
+# Scope it like production IAM (see examples/aws-research-setup.md).
 
 platforms:
   # ── Tier B: a known CLI from the catalog ───────────────────────────────────
