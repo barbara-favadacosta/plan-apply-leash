@@ -36,6 +36,7 @@
   },
 
   "postCreateCommand": "bash /workspace/.devcontainer/apply/post-create.sh",
+  "postAttachCommand": "bash /workspace/.devcontainer/apply/load-plan.sh",
 
   "customizations": {
     "vscode": {

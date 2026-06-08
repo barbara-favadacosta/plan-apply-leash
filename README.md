@@ -125,6 +125,13 @@ per-env Docker volume and survives rebuilds — there's deliberately no
 
 ## Daily workflow
 
+**The practical setup: keep both envs open at once.** Open the folder twice in VS
+Code — one window in **leash-research**, one in **leash-apply** — and keep a third
+plain host terminal for the promote step. The loop is then: research drafts a plan
+→ you promote it on the host → you **Reload Window** in the apply env to pick it up.
+No flipping a single window in and out of the container, and no full rebuild between
+plans (the plan is recompiled on every attach — see step 3).
+
 **1 · Research** — Reopen in Container → **leash-research**, run `claude`, and
 ask it to investigate and draft a plan. For example:
 
@@ -153,7 +160,8 @@ steps:
   - { id: 1, repo: foo-service, type: file_edit, path: package.json }
 ```
 
-**2 · Review + promote** — Reopen Folder Locally, then on the host:
+**2 · Review + promote** — on the host (a plain terminal works; you don't need to
+take the research window out of its container):
 
 ```bash
 scripts/plan-promote.sh <plan_id>.yaml                       # default project
@@ -167,11 +175,20 @@ you to confirm and atomically promotes to
 `target-state/approved-plans/current.yaml`. **This is the trust boundary** — your
 review catches coordination mistakes no hook can.
 
-**3 · Apply** — Reopen in Container → **leash-apply**, run `claude`, and tell it
-to carry out `current.yaml`. It edits and tests on its own. Before each `Bash`,
+**3 · Apply** — in the **leash-apply** window, run **Developer: Reload Window** to
+pick up the freshly-promoted plan (the `postAttachCommand` recompiles
+`current.yaml` into the enforced allowlist on every attach), then run `claude` and
+tell it to carry out `current.yaml`. It edits and tests on its own. Before each `Bash`,
 `Edit`, or `Write`, a check (the per-call hook) compares the action against the
 per-repo allowlist, and every action is recorded to
 `target-state/audit/tally.jsonl`.
+
+> **Reload vs. rebuild.** A plain **Reload Window** is all it takes to load a
+> newly-promoted plan — no rebuild between plans. You only need **Rebuild
+> Container** when the container config itself changes, i.e. after re-running
+> `setup.sh` (which regenerates `devcontainer.json`). If a promoted plan fails
+> validation, the apply env comes up *locked* (every call blocked) rather than
+> running the previous plan — fix the plan, re-promote, and reload.
 
 Publishing is held back on purpose: `git commit`/`push` and `gh pr create` stay
 **paused** until you run `scripts/approve-publish.sh` on the host. That script

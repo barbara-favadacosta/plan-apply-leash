@@ -166,4 +166,6 @@ cp "${DRAFT}" "${NEW_TMP}"
 mv -f "${NEW_TMP}" "${CURRENT}"
 
 echo "✓ promoted to target-state/approved-plans/current.yaml"
-echo "→ reopen the apply devcontainer to pick up the new plan"
+echo "→ in the apply window, run 'Developer: Reload Window' to pick up the new plan"
+echo "  (Rebuild Container is only needed after re-running setup.sh, which"
+echo "   regenerates devcontainer.json)"
