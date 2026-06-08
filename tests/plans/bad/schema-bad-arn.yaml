@@ -1,0 +1,22 @@
+plan_id: 2026-05-22-bad-schema-arn
+description: An invalid ARN format that should fail schema validation.
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/test
+      pr_title: "Test"
+      file_paths:
+        - src/handler.ts
+  aws_resources:
+    - arn: not-actually-an-arn
+      actions:
+        - lambda:UpdateFunctionCode
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit the handler
+    path: src/handler.ts

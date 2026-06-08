@@ -1,0 +1,47 @@
+{
+  "name": "leash-apply",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "dev",
+  "containerUser": "dev",
+
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
+  ],
+
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  "mounts": [
+    "source=agent-auth-apply,target=/home/dev/.claude,type=volume"
+  ],
+
+  "containerEnv": {
+    "LEASH_ENV": "apply",
+    "HARNESS_PATH": "/workspace",
+    "REPOS_PATH": "/workspace/repos",
+    "APPLY_PLAN_PATH": "/workspace/target-state/approved-plans/current.yaml",
+    "APPLY_COMPILED_PATH": "/workspace/target-state/audit/compiled-allowlist.json",
+    "APPLY_TALLY_PATH": "/workspace/target-state/audit/tally.jsonl",
+    "APPLY_REQUIRE_PUBLISH_APPROVAL": "1",
+    "APPLY_PUBLISH_APPROVED_FILE": "/workspace/target-state/audit/publish-approved",
+
+    "//proxy": "Default egress route: the squid hostname-allowlist proxy started by init-firewall.sh. CLIs (gh, git, curl) honor these and so reach GitHub regardless of its CDN IP rotation. Set in both cases so a tool that reads only one form still routes correctly.",
+    "HTTP_PROXY": "http://127.0.0.1:3128",
+    "HTTPS_PROXY": "http://127.0.0.1:3128",
+    "http_proxy": "http://127.0.0.1:3128",
+    "https_proxy": "http://127.0.0.1:3128",
+    "NO_PROXY": "localhost,127.0.0.1,::1",
+    "no_proxy": "localhost,127.0.0.1,::1"
+  },
+
+  "postCreateCommand": "bash /workspace/.devcontainer/apply/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code"
+      ]
+    }
+  }
+}

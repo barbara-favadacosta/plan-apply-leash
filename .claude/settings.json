@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf $HOME*)",
+      "Bash(sudo rm*)",
+      "Bash(:(){ :|:& };:*)",
+      "Bash(dd if=*of=/dev/*)",
+      "Bash(mkfs*)",
+      "Bash(git push --force origin main*)",
+      "Bash(git push --force origin master*)",
+      "Bash(git push -f origin main*)",
+      "Bash(git push -f origin master*)",
+      "Bash(git config --global*)",
+      "Read(/home/dev/.aws/credentials)",
+      "Read(/home/dev/.ssh/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/credentials.json)",
+      "Read(**/service-account*.json)"
+    ]
+  }
+}

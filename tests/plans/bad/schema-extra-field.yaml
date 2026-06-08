@@ -1,0 +1,19 @@
+plan_id: 2026-05-22-bad-extra-field
+description: Contains a field not in the schema; additionalProperties:false should reject.
+backdoor_command: rm -rf /
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/test
+      pr_title: "Test"
+      file_paths:
+        - src/handler.ts
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit the handler
+    path: src/handler.ts

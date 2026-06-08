@@ -1,0 +1,40 @@
+# repos.yaml — per-user config for both devcontainers.
+#
+# Copy this file to repos.yaml and edit. repos.yaml is gitignored.
+# Run `scripts/setup.sh` after editing to regenerate the devcontainer files,
+# then rebuild the container.
+#
+# Two keys: `apply` (required) and `research` (optional).
+
+# ── apply (REQUIRED) ─────────────────────────────────────────────────────────
+# Absolute host paths to the repos the APPLY agent may write to. Each is
+# mounted read-write in apply and read-only in research; its basename becomes
+# the slug the agent sees under /workspace/repos/<slug>/ and that a plan
+# references in scope.repos.<slug>. Two paths with the same basename is a hard
+# error — rename one locally.
+#
+# This is also an enforced allowlist: plan-promote rejects any approved plan
+# whose scope.repos names a slug that isn't listed here, so what apply can
+# touch is bounded at the config level too — not only by the write token.
+apply:
+  - /Users/you/code/foo-service
+  - /Users/you/code/bar-cli
+  # - /Users/you/work/baz
+
+# ── research (OPTIONAL) ──────────────────────────────────────────────────────
+# GitHub repositories (owner/repo, exactly as they appear on GitHub) the
+# RESEARCH agent is allowed to look at over the API. These do NOT need to be
+# cloned locally — research reads them with its read-only PAT.
+#
+#   • Non-empty → research is told to look ONLY at these repos, even though its
+#     PAT can reach more. The apply repos above are auto-included (by their
+#     GitHub origin remote) and are always readable on disk regardless.
+#   • Empty or omitted → research may read anything its read-only PAT can reach
+#     (the original behavior).
+#
+# This is a focus guardrail injected into the agent's context, not a hard
+# security boundary — research credentials are read-only, and the only true
+# boundary is a PAT scoped to these repos. Leave it empty to disable.
+research: []
+  # - acme/foo-service
+  # - acme/shared-config   # a repo you read but never change

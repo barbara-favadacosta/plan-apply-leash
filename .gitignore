@@ -1,0 +1,40 @@
+# Per-target state: drafts, approved plans, audit logs. Per-user, per-machine.
+target-state/
+
+# Per-user repo list and the devcontainer.json files generated from it.
+# Edit repos.yaml; scripts/setup.sh regenerates the two devcontainer.json files.
+repos.yaml
+.devcontainer/research/devcontainer.json
+.devcontainer/apply/devcontainer.json
+
+# Per-user research platform access (read-only mounts for the research env).
+research-access.yaml
+
+# Local config and secrets. The real creds file lives OUTSIDE this repo
+# (default ~/.config/plan-apply-leash/creds.env); this guards against a stray copy.
+creds.env
+.env
+.env.*
+.envrc
+*.pem
+*.kubeconfig
+.aws/credentials
+
+# Reference coding-agent per-machine state (Claude Code uses ~/.claude).
+.claude/settings.local.json
+.claude/.last-session
+.claude/scheduled_tasks.lock
+
+# Editor and OS artifacts.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Build / runtime debris.
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv*/
+venv/

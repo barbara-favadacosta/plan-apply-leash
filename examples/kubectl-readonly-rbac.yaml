@@ -1,0 +1,126 @@
+# Read-only ServiceAccount for the research devcontainer.
+#
+# Usage:
+#   1. Apply this manifest to each cluster you want the research agent to read.
+#      Customize the namespace if you want it elsewhere than 'leash-research'.
+#   2. Generate a kubeconfig that authenticates as this ServiceAccount.
+#   3. Save the kubeconfig somewhere on your host (e.g. ~/.kube/config-leash-readonly)
+#      and reference it from a `kubectl` platform in research-access.yaml (below).
+#
+# Strongly recommended: do NOT just mount your existing admin ~/.kube/config.
+# This whole pattern exists so the research env literally cannot mutate the
+# cluster, even by accident.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: leash-research
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: leash-research
+  namespace: leash-research
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: leash-research-readonly
+rules:
+  # Read-only on common namespaced resources.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - configmaps
+      - endpoints
+      - namespaces
+      - nodes
+      - events
+      - persistentvolumeclaims
+      - replicationcontrollers
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+  # NOTE: deliberately omitted — secrets, exec, port-forward.
+  # If you need any of these for research, scope them with a more narrowly
+  # targeted Role/RoleBinding rather than adding to this ClusterRole.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: leash-research-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: leash-research-readonly
+subjects:
+  - kind: ServiceAccount
+    name: leash-research
+    namespace: leash-research
+---
+# Long-lived token (k8s 1.24+ requires this — ServiceAccounts no longer auto-create
+# Secret tokens). Use this only if you can't use a short-lived `kubectl create token`
+# flow; rotate manually when needed.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: leash-research-token
+  namespace: leash-research
+  annotations:
+    kubernetes.io/service-account.name: leash-research
+type: kubernetes.io/service-account-token
+
+# ─────────────────────────────────────────────────────────────────────────
+# After kubectl-apply'ing this, build the kubeconfig on your laptop:
+#
+#   CLUSTER_NAME="my-dev-cluster"
+#   API_SERVER="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+#   CA_DATA="$(kubectl config view --minify --flatten -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
+#   TOKEN="$(kubectl -n leash-research get secret leash-research-token -o jsonpath='{.data.token}' | base64 -d)"
+#
+#   cat > ~/.kube/config-leash-readonly <<EOF
+#   apiVersion: v1
+#   kind: Config
+#   clusters:
+#   - name: ${CLUSTER_NAME}
+#     cluster:
+#       server: ${API_SERVER}
+#       certificate-authority-data: ${CA_DATA}
+#   users:
+#   - name: leash-research
+#     user:
+#       token: ${TOKEN}
+#   contexts:
+#   - name: leash-research
+#     context:
+#       cluster: ${CLUSTER_NAME}
+#       user: leash-research
+#       namespace: default
+#   current-context: leash-research
+#   EOF
+#
+# Then add a platform to research-access.yaml (mount_at + the kubectl Feature
+# come from the catalog; add the cluster API endpoint so egress allows it):
+#   platforms:
+#     - name: k8s
+#       install: kubectl
+#       credential: ~/.kube/config-leash-readonly
+#       allow_domains: [your-cluster-api.example.internal]   # the kubeconfig's server host
+#
+# Verify on the host before opening the container:
+#   KUBECONFIG=~/.kube/config-leash-readonly kubectl get nodes        # should work
+#   KUBECONFIG=~/.kube/config-leash-readonly kubectl delete ns x      # should be Forbidden
+# ─────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,5 @@
+# Fixture for the validate-plan.py --apply-repos allowlist check (tests/run.sh).
+# Paths need not exist — validate-plan only reads the basenames as allowed slugs.
+apply:
+  - /code/foo-service
+  - /code/bar-cli

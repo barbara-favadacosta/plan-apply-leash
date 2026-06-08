@@ -1,0 +1,31 @@
+plan_id: 2026-05-27-in-allowlist
+description: >
+  Schema-valid plan whose scope.repos are all present in the apply allowlist
+  fixture; the --apply-repos check should pass it (exit 0).
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/allowed-change
+      pr_title: "A change in an allowlisted repo"
+      file_paths:
+        - package.json
+    bar-cli:
+      github: acme/bar-cli
+      branch: feature/allowed-change
+      pr_title: "Another allowlisted change"
+      file_paths:
+        - go.mod
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit a file in an allowlisted repo
+    path: package.json
+  - id: 2
+    repo: bar-cli
+    type: file_edit
+    description: Edit a file in another allowlisted repo
+    path: go.mod

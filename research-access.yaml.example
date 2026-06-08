@@ -1,0 +1,58 @@
+# research-access.yaml — read-only platform credentials for the RESEARCH env.
+#
+# Copy this file to research-access.yaml and edit. research-access.yaml is
+# gitignored. Run `scripts/setup.sh` after editing to regenerate the research
+# devcontainer.json, then rebuild the container.
+#
+# This file is OPTIONAL. Omit it (or leave `platforms:` empty) and research
+# runs with GitHub only. The APPLY env never reads this file — apply gets a
+# scoped GitHub token and nothing else, by design.
+#
+# Every value here is a POINTER or non-secret config — NEVER a secret value.
+# `credential` points at a host file/dir (like the GitHub entries in creds.env
+# point at token files). The credential is bind-mounted READ-ONLY. The harness
+# rejects any `credential` that resolves inside this repo: the research agent
+# can read the whole workspace, so a secret in the tree would leak.
+#
+# Read-only is YOURS to guarantee. The harness mounts read-only on the
+# filesystem side, but it cannot prove the credential itself is read-only.
+# Scope it like production IAM (see examples/iam-research-policy.json).
+
+platforms:
+  # ── Tier B: a known CLI from the catalog ───────────────────────────────────
+  # `install:` names a catalog entry (see scripts/research_access.py CATALOG).
+  # The catalog supplies the devcontainer Feature that installs the CLI, plus
+  # sensible defaults for `mount_at` and `allow_domains` — so you usually only
+  # give `credential` and `env`. An `install:` value not in the catalog is a
+  # hard error: there is no escape hatch to an arbitrary installer.
+  - name: aws
+    install: aws-cli              # → ghcr.io Feature + /home/dev/.aws + AWS egress
+    credential: ~/.aws            # your host ~/.aws, mounted read-only
+    env:
+      AWS_PROFILE: research-readonly
+      AWS_REGION: us-east-1       # the CLI's default region (every region is reachable)
+    # Egress defaults to the wildcard `.amazonaws.com` (+ `.api.aws`), so all
+    # services in all regions work via the proxy — no per-service/region list.
+    # To tighten the exfil surface, override with specific hosts, e.g.:
+    # allow_domains:
+    #   - sts.amazonaws.com
+    #   - s3.us-east-1.amazonaws.com
+
+  - name: k8s
+    install: kubectl              # → ghcr.io Feature + /home/dev/.kube/config + $KUBECONFIG
+    credential: ~/.kube/research-ro   # a kubeconfig with a READ-ONLY ServiceAccount context
+    # The cluster API endpoint is site-specific, so add it yourself:
+    allow_domains:
+      - your-cluster.example.internal
+
+  # ── Tier A: no CLI — the agent reaches the platform over HTTP ───────────────
+  # Omit `install`. You must give `mount_at` and `allow_domains` yourself, since
+  # there's no catalog row to default them from. Ideal for REST APIs and
+  # internal services: nothing is added to the image.
+  # - name: internal-metrics
+  #   credential: ~/.config/acme/metrics-ro.token
+  #   mount_at: /home/dev/.config/acme/metrics-ro.token
+  #   env:
+  #     METRICS_TOKEN_FILE: /home/dev/.config/acme/metrics-ro.token
+  #   allow_domains:
+  #     - metrics.acme.internal

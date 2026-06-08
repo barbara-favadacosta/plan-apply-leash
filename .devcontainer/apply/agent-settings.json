@@ -1,0 +1,82 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(/home/dev/.ssh/**)",
+      "Write(/workspace/.devcontainer/**)",
+      "Write(/workspace/.claude/**)",
+      "Write(/workspace/hooks/**)",
+      "Write(/workspace/scripts/**)",
+      "Write(/workspace/plans/**)",
+      "Write(/workspace/tests/**)",
+      "Write(/workspace/examples/**)",
+      "Write(/workspace/target-state/**)",
+      "Write(/workspace/.env)",
+      "Write(/workspace/.env.*)",
+      "Write(/workspace/.gitignore)",
+      "Write(/workspace/README.md)",
+      "Edit(/workspace/.devcontainer/**)",
+      "Edit(/workspace/.claude/**)",
+      "Edit(/workspace/hooks/**)",
+      "Edit(/workspace/scripts/**)",
+      "Edit(/workspace/plans/**)",
+      "Edit(/workspace/tests/**)",
+      "Edit(/workspace/examples/**)",
+      "Edit(/workspace/target-state/**)",
+      "Edit(/workspace/.env)",
+      "Edit(/workspace/.env.*)",
+      "Edit(/workspace/.gitignore)",
+      "Edit(/workspace/README.md)",
+      "Bash(curl * | *sh*)",
+      "Bash(wget * | *sh*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(sudo *)",
+      "Bash(git push --force*)",
+      "Bash(git push *:main*)",
+      "Bash(git push *:master*)",
+      "Bash(git reset --hard*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh release*)",
+      "Bash(git config --global*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /workspace/hooks/session-start.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /workspace/hooks/pre-tool-hook.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /workspace/hooks/stop-hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}

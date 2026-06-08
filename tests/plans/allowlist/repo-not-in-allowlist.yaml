@@ -1,0 +1,32 @@
+plan_id: 2026-05-27-repo-not-in-allowlist
+description: >
+  Schema-valid, heuristically-clean plan that names a repo (secret-repo) which
+  is NOT in the apply allowlist fixture. Only the --apply-repos config-level
+  check should reject it (exit 2); without that flag it would validate fine.
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/allowed-change
+      pr_title: "A change in an allowlisted repo"
+      file_paths:
+        - package.json
+    secret-repo:
+      github: acme/secret-repo
+      branch: feature/sneaky-change
+      pr_title: "Touches a repo never declared in repos.yaml"
+      file_paths:
+        - config.yaml
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit a file in the allowlisted repo
+    path: package.json
+  - id: 2
+    repo: secret-repo
+    type: file_edit
+    description: Edit a file in the undeclared repo
+    path: config.yaml

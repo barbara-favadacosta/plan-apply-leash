@@ -1,0 +1,20 @@
+plan_id: 2026-05-22-bad-bidi
+description: >
+  This description contains a hidden RTL override character: "‮ tac/etc/passwd"
+  which can visually reorder text to deceive a reviewer.
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/test
+      pr_title: "Test"
+      file_paths:
+        - src/handler.ts
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit the handler
+    path: src/handler.ts
