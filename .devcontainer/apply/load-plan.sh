@@ -57,29 +57,32 @@ else
   echo "→ plan unchanged; allowlist and publish approval left as-is"
 fi
 
-# Banner: summarize the in-effect plan from the compiled allowlist.
+# Banner: summarize the in-effect plan from the compiled allowlist. The per-repo
+# scope block comes from validate_plan.format_compiled_summary — the single
+# renderer shared with plan-promote.sh, so the two banners never drift. The
+# heredoc is quoted (<<'PY') and reads every path from the environment, so no
+# shell value is ever interpolated into the Python source.
 python3 - <<'PY'
-import json, os
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ.get("HARNESS_PATH", "/workspace"), "hooks"))
+from validate_plan import format_compiled_summary
 compiled = json.load(open(os.environ["APPLY_COMPILED_PATH"]))
+_req = os.environ.get("APPLY_REQUIRE_PUBLISH_APPROVAL", "1").strip().lower() not in ("0", "false", "no", "")
 print("──────────────────────────────────────────────")
-print(f"apply env ready")
+print("apply env ready")
 print(f"  plan_id:        {compiled['plan_id']}")
 print()
-print(f"  /workspace:        harness checkout")
-print(f"  /workspace/repos:  each repo from repos.yaml mounted by slug (read-write, hook-gated)")
-print(f"  /workspace/target-state/audit/: tally + compiled allowlist (persistent)")
+print("  /workspace:        harness checkout")
+print("  /workspace/repos:  each repo from repos.yaml mounted by slug (read-write, hook-gated)")
+print("  /workspace/target-state/audit/: tally + compiled allowlist (persistent)")
 print()
-print(f"  capabilities:   GitHub (via GH_TOKEN), code edits to /workspace/repos/<slug>/")
-print(f"  NOT available:  AWS CLI, kubectl")
-_req = os.environ.get("APPLY_REQUIRE_PUBLISH_APPROVAL", "1").strip().lower() not in ("0", "false", "no", "")
-print("  publish:        " + ("commit/push/PR PAUSED until you run scripts/approve-publish.sh"
+print("  capabilities:   GitHub (via GH_TOKEN), code edits to /workspace/repos/<slug>/")
+print("  NOT available:  AWS CLI, kubectl")
+print("  workflow:       branch-first ENFORCED — edits blocked until the repo is on the plan's branch")
+print("  publish:        " + ("branch/edit/commit autonomous; push & PR PAUSED until you run scripts/approve-publish.sh"
                               if _req else "auto (approval disabled)"))
 print()
-print(f"  in-scope repos ({len(compiled.get('repos', {}))}):")
-for slug, cfg in compiled.get("repos", {}).items():
-    branch = cfg.get("branch", "?")
-    n_files = len(cfg.get("file_paths", []))
-    print(f"    • {slug:25s} → {cfg.get('github', '?')}  ({n_files} files, branch {branch})")
+print(format_compiled_summary(compiled))
 print()
 print(f"  compiled plan:  {os.environ['APPLY_COMPILED_PATH']}")
 print(f"  tally:          {os.environ['APPLY_TALLY_PATH']}")

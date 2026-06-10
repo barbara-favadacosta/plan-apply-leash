@@ -104,21 +104,17 @@ echo "✓ validation passed"
 echo
 
 echo "→ compiled allowlist preview:"
-python3 - <<PY
-import json
-with open("${TMP_COMPILED}") as f:
+# Quoted heredoc (<<'PY') + paths via the environment: nothing from the shell is
+# interpolated into the Python source. The per-repo block is rendered by the
+# shared validate_plan.format_compiled_summary, the same one load-plan.sh uses.
+LEASH_HOOKS_DIR="${VALIDATOR%/*}" LEASH_COMPILED="${TMP_COMPILED}" python3 - <<'PY'
+import json, os, sys
+sys.path.insert(0, os.environ["LEASH_HOOKS_DIR"])
+from validate_plan import format_compiled_summary
+with open(os.environ["LEASH_COMPILED"]) as f:
     c = json.load(f)
-print(f"   plan_id:  {c['plan_id']}")
-print(f"   repos ({len(c['repos'])}):")
-for slug, cfg in c['repos'].items():
-    files = cfg.get('file_paths', [])
-    branch = cfg.get('branch', '?')
-    gh = cfg.get('github', '?')
-    print(f"     • {slug:25s} → {gh}")
-    print(f"       branch:     {branch}")
-    print(f"       file_paths: {files[:5]}{' ...' if len(files) > 5 else ''}")
-print(f"   commands ({len(c['allowed_command_prefixes'])}): {c['allowed_command_prefixes'][:8]}{' ...' if len(c['allowed_command_prefixes']) > 8 else ''}")
-print(f"   aws_resources: {len(c['aws_resources'])} (informational — apply env has no AWS access)")
+print(f"   plan_id: {c['plan_id']}")
+print(format_compiled_summary(c, indent="   "))
 PY
 echo
 
@@ -144,11 +140,13 @@ esac
 
 if [ -f "${CURRENT}" ] && [ ! -L "${CURRENT}" ]; then
   TS="$(date -u +%Y%m%dT%H%M%SZ)"
-  # Try to use the previous plan's plan_id in the backup name; fall back to timestamp.
-  PREV_ID=$(python3 -c "
-import sys, yaml
+  # Try to use the previous plan's plan_id in the backup name; fall back to
+  # timestamp. CURRENT is passed via the environment, not interpolated into the
+  # Python source, so a path with a quote/newline can't break out of the string.
+  PREV_ID=$(CURRENT_PLAN="${CURRENT}" python3 -c "
+import os, yaml
 try:
-    print(yaml.safe_load(open('${CURRENT}'))['plan_id'])
+    print(yaml.safe_load(open(os.environ['CURRENT_PLAN']))['plan_id'])
 except Exception:
     pass
 " 2>/dev/null)

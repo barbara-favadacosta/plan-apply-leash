@@ -28,6 +28,9 @@ scope:
         - cmd/main.go
         - internal/logging/setup.go
 
+  # Build/test commands only. The git lifecycle — create each repo's `branch`,
+  # stage, commit, and (after you approve) push to that branch and open the PR —
+  # is built into the harness and runs for every plan, so it is NOT listed here.
   allowed_command_prefixes:
     - npm install
     - npm test
@@ -35,10 +38,6 @@ scope:
     - go mod tidy
     - go test ./...
     - go build ./...
-    - git add
-    - git commit
-    - git push origin
-    - gh pr create
 
 steps:
   - id: 1
@@ -71,74 +70,38 @@ steps:
     type: command
     description: Run the test suite
     command_prefix: npm test
-  - id: 7
-    repo: foo-service
-    type: command
-    description: Stage and commit
-    command_prefix: git add
-  - id: 8
-    repo: foo-service
-    type: command
-    description: Commit the changes
-    command_prefix: git commit
-  - id: 9
-    repo: foo-service
-    type: command
-    description: Push branch
-    command_prefix: git push origin feature/bump-logger-v2
-  - id: 10
-    repo: foo-service
-    type: command
-    description: Open the PR
-    command_prefix: gh pr create
 
-  - id: 11
+  # No git steps here: the apply env creates branch feature/bump-logger-v2,
+  # commits, and (once you approve) pushes and opens the PR for this repo on its
+  # own — that lifecycle is built into the harness for every plan.
+
+  - id: 7
     repo: bar-cli
     type: file_edit
     description: Bump @acme/logger version in go.mod
     path: go.mod
-  - id: 12
+  - id: 8
     repo: bar-cli
     type: file_edit
     description: Refresh go.sum
     path: go.sum
-  - id: 13
+  - id: 9
     repo: bar-cli
     type: file_edit
     description: Update logger setup helper
     path: internal/logging/setup.go
-  - id: 14
+  - id: 10
     repo: bar-cli
     type: file_edit
     description: Adjust cmd/main.go call site
     path: cmd/main.go
-  - id: 15
+  - id: 11
     repo: bar-cli
     type: command
     description: Tidy and test
     command_prefix: go mod tidy
-  - id: 16
+  - id: 12
     repo: bar-cli
     type: command
     description: Run tests
     command_prefix: go test ./...
-  - id: 17
-    repo: bar-cli
-    type: command
-    description: Stage and commit
-    command_prefix: git add
-  - id: 18
-    repo: bar-cli
-    type: command
-    description: Commit the changes
-    command_prefix: git commit
-  - id: 19
-    repo: bar-cli
-    type: command
-    description: Push branch
-    command_prefix: git push origin feature/match-new-logger
-  - id: 20
-    repo: bar-cli
-    type: command
-    description: Open the PR
-    command_prefix: gh pr create

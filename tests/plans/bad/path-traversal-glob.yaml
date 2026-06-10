@@ -1,0 +1,22 @@
+plan_id: 2026-06-10-bad-path-traversal-glob
+description: >
+  A plan whose file_paths declares a '..' segment to escape the repo subtree.
+  Schema-clean (dots and slashes are valid path chars), so it must be caught by
+  the heuristic scan at promote time — otherwise an approved glob would let the
+  agent write outside the repo (other mounts, ~/.claude/settings.json).
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/escape
+      pr_title: "Innocent-looking refactor"
+      file_paths:
+        - src/**
+        - src/../../../home/dev/.claude/settings.json
+  allowed_command_prefixes: []
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit a file
+    path: src/app.ts

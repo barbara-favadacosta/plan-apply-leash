@@ -29,7 +29,7 @@
             "^[a-zA-Z0-9._-]+$": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["github", "file_paths"],
+              "required": ["github", "branch", "file_paths"],
               "properties": {
                 "github": {
                   "type": "string",
@@ -40,7 +40,7 @@
                   "type": "string",
                   "pattern": "^[A-Za-z0-9._/-]+$",
                   "maxLength": 100,
-                  "description": "branch name the apply session will push to"
+                  "description": "Branch the apply session creates and pushes to. REQUIRED: the harness blocks every edit in a repo until that repo is on this branch (branch-first enforcement), so every change lands on a new branch. Must not be a default branch (main/master/HEAD)."
                 },
                 "pr_title": {
                   "type": "string",
@@ -55,9 +55,10 @@
                   "type": "array",
                   "minItems": 1,
                   "maxItems": 100,
+                  "description": "Repo-relative paths the agent may edit. Each is either an exact file (e.g. 'src/handler.ts') or a directory subtree glob with a trailing '/**' (e.g. 'src/**'), which grants every file under that directory. '**' is allowed ONLY as a whole trailing path segment — no other wildcards.",
                   "items": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9._/-]+$",
+                    "pattern": "^[A-Za-z0-9._/-]+(/\\*\\*)?$",
                     "maxLength": 256
                   }
                 }

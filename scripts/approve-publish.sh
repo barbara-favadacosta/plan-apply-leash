@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # approve-publish.sh — human approval for the apply agent's publish phase.
 #
-# The apply agent edits and tests autonomously, but `git commit`, `git push`,
-# and `gh pr create` are PAUSED by the PreToolUse hook until you approve.
-# Review the agent's local changes first, then run this; the agent can then
-# commit, push, and open the PR. Approval is reset on every apply container
-# start (one approval per session).
+# The apply agent branches, edits, tests, and COMMITS autonomously, but
+# `git push` and `gh pr create` are PAUSED by the PreToolUse hook until you
+# approve. Review the agent's local commits first, then run this; the agent can
+# then push (only to the plan's branch) and open the PR. Approval is reset when
+# a new/changed plan loads (one approval per plan).
 #
 # Run it from the host (in the repo) OR from a non-agent shell in the container.
 # The agent itself cannot run this (it isn't an allowed command) or create the

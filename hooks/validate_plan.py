@@ -6,7 +6,8 @@ Two roles in one script:
   1) Pre-flight (run from apply post-create.sh): validates the approved plan against
      the JSON schema and a battery of content heuristics, then compiles a strict
      allowlist file used by the per-call hook.
-  2) Library: pre-tool-hook.py imports check_path_allowed / check_command_allowed.
+  2) Library: pre-tool-hook.py imports check_path_allowed / check_command_allowed /
+     classify_git_command / git_push_target / plan_branches.
 
 The schema is the load-bearing defense. The heuristics catch obvious malware,
 exfil patterns, and prompt-injection markers — they are NOT a robust prompt-injection
@@ -32,6 +33,7 @@ import base64
 import json
 import os
 import re
+import shlex
 import sys
 import unicodedata
 from pathlib import Path
@@ -90,8 +92,15 @@ ALLOWED_URL_HOSTS = {
     "objects.githubusercontent.com",
 }
 
+# Zero-width / bidi / invisible code points a plan must never contain. Written
+# entirely as \u escapes ON PURPOSE: the literal characters are themselves
+# invisible, so an editor or reviewer can't see them in the source (and this
+# very line could otherwise smuggle one). Covers the zero-width/bidi marks
+# (U+200B..U+200F), the bidi embedding/override controls (U+202A..U+202E) and
+# isolates (U+2066..U+2069), the BOM / zero-width no-break space (U+FEFF), and
+# the soft hyphen (U+00AD).
 BIDI_AND_INVISIBLE = re.compile(
-    r"[​-\u200F\u202A-\u202E\u2066-\u2069﻿­]"
+    r"[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\u00AD]"
 )
 
 BASE64_RUN = re.compile(r"[A-Za-z0-9+/]{200,}={0,2}")
@@ -106,13 +115,24 @@ REPOS_PREFIX = "/workspace/repos/"
 # per-file scope, which is only enforced on the Edit/Write tools, not on Bash).
 # Apply commands must therefore be a single, simple command: no chaining, pipes,
 # redirection, command substitution, or backgrounding.
-SHELL_OPERATORS = [
+#
+# Crucially, these are only dangerous when the SHELL would act on them — i.e.
+# when they appear UNQUOTED. A commit message or PR body legitimately contains
+# them ('git commit -m "fix: handle a & b"', 'gh pr create --body "see | the
+# table > here"'), and the shell treats those as literal text. A naive substring
+# scan rejects every such command; command_shell_violation instead tracks quote
+# state and flags an operator only where it is shell-active.
+
+# Operators that the shell only honors OUTSIDE any quoting. Longest-match-first
+# so "&&"/"||"/">>" report via their single-char entry but multi-char forms like
+# "$(" and "<(" win over a bare "<".
+_UNQUOTED_OPERATORS = [
+    ("$(", "$(…) command substitution"),
+    ("<(", "process substitution '<(…)'"),
     (";", "command separator ';'"),
     ("&", "background / chain '&' or '&&'"),
     ("|", "pipe '|' or '||'"),
     ("`", "backtick command substitution"),
-    ("$(", "$(…) command substitution"),
-    ("<(", "process substitution '<(…)'"),
     (">", "output redirection '>' / '>>'"),
     ("<", "input redirection '<'"),
     ("\n", "newline (multiple commands)"),
@@ -121,14 +141,237 @@ SHELL_OPERATORS = [
 
 
 def command_shell_violation(command: str) -> str | None:
-    """Return a human-readable label for the first disallowed shell operator in
-    `command`, or None if the command is a single, simple, non-redirecting
-    command. Used to stop an allowed command prefix from carrying extra
-    commands or arbitrary file writes past the allowlist."""
-    for token, label in SHELL_OPERATORS:
-        if token in command:
-            return label
+    """Return a human-readable label for the first SHELL-ACTIVE control/redirection
+    operator in `command`, or None if the command is a single, simple command.
+
+    Quoting is honored exactly as a POSIX shell would: inside single quotes
+    nothing is special; inside double quotes only command substitution ($(…) and
+    backticks) stays active (a `\\` escapes the next char there). So `git commit
+    -m "fix: a & b"` and `gh pr create --body "a | b > c"` are allowed, while
+    `git commit -m x && curl …`, `echo $(id)`, and a double-quoted backtick are
+    rejected. An unbalanced quote is itself a violation — the shell would error on
+    it, and leaving it unflagged would let an operator hide in an unterminated
+    string."""
+    in_single = False  # within '…' — everything literal until the next '
+    in_double = False  # within "…" — only $(/backtick stay active
+    i, n = 0, len(command)
+    while i < n:
+        c = command[i]
+        if in_single:
+            if c == "'":
+                in_single = False
+            i += 1
+            continue
+        if in_double:
+            if c == "\\" and i + 1 < n:   # backslash escapes the next char in "…"
+                i += 2
+                continue
+            if c == '"':
+                in_double = False
+                i += 1
+                continue
+            if c == "`":
+                return "backtick command substitution"
+            if c == "$" and i + 1 < n and command[i + 1] == "(":
+                return "$(…) command substitution"
+            i += 1
+            continue
+        # Unquoted context.
+        if c == "\\" and i + 1 < n:        # backslash-escaped char is literal
+            i += 2
+            continue
+        if c == "'":
+            in_single = True
+            i += 1
+            continue
+        if c == '"':
+            in_double = True
+            i += 1
+            continue
+        for token, label in _UNQUOTED_OPERATORS:
+            if command.startswith(token, i):
+                return label
+        i += 1
+    if in_single or in_double:
+        return "unbalanced quote (unterminated string)"
     return None
+
+
+# --- Git / gh workflow classification ----------------------------------------
+# The branch → stage → commit → push → PR cycle is scaffolding EVERY apply plan
+# needs, so the harness owns it rather than making each plan re-list it. Listing
+# it in allowed_command_prefixes never worked well anyway: the prefix match is
+# literal, so a plan's "git add" never matched the `git -C /workspace/repos/<slug>
+# add` form the agent is FORCED to use (it can't `cd` — that's not an allowed
+# prefix — and it can't chain `cd … && git …` — shell operators are rejected).
+#
+# Commands are classified by their git/gh subcommand, read AFTER skipping
+# `git -C <path>` and the other global options, into:
+#   "local"   — autonomous, no approval: create-branch, add, commit, and
+#               read-only inspection (status/diff/log/show/rev-parse/branch).
+#   "publish" — allowed, but HELD by the publish-approval gate in
+#               pre-tool-hook.py: git push, gh pr create/ready, gh release.
+#   None      — not a recognized git/gh workflow verb; falls through to the
+#               plan's allowed_command_prefixes (e.g. npm test, terraform fmt).
+#
+# Deliberately NOT auto-allowed (they fall through to the plan): reset, clean,
+# rm, and checkout/switch/restore of PATHS — each can destroy uncommitted work
+# in the user's REAL, bind-mounted repos. A plan may still grant them explicitly.
+_GIT_GLOBAL_OPTS_WITH_VALUE = {"-C", "--git-dir", "--work-tree", "-c", "--namespace", "--config-env"}
+_GIT_LOCAL_SUBCMDS = {"add", "commit", "status", "diff", "log", "show", "rev-parse", "branch"}
+_GIT_BRANCH_CREATE_FLAGS = {"-b", "-B", "-c", "-C"}
+
+# Global options that inject inline git config. core.pager / diff.external /
+# core.hooksPath / core.sshCommand / core.fsmonitor (etc.) each make git execute
+# an external command, so `git -c <cfg> <verb>` is arbitrary code execution behind
+# an innocent verb. The built-in workflow never needs them; a command carrying one
+# is refused (→ falls through to the plan allowlist, which can't express it).
+_GIT_INLINE_CONFIG_OPTS = {"-c", "--config-env"}
+
+
+def _git_subcommand(tokens: list[str]) -> tuple[str | None, list[str], bool]:
+    """Return (subcommand, args_after_it, uses_inline_config). Skips git's global
+    options (and the values of value-taking ones) to find the subcommand. The third
+    field is True iff the GLOBAL options include an inline-config flag — see
+    _GIT_INLINE_CONFIG_OPTS. Subcommand-level -c (e.g. `git switch -c`) is NOT
+    flagged because it appears after the subcommand, outside this loop."""
+    i = 0
+    inline_config = False
+    while i < len(tokens):
+        t = tokens[i]
+        if t in _GIT_INLINE_CONFIG_OPTS or t.startswith("--config-env="):
+            inline_config = True
+        if t in _GIT_GLOBAL_OPTS_WITH_VALUE:
+            i += 2
+            continue
+        if t.startswith("-"):
+            i += 1
+            continue
+        return t, tokens[i + 1:], inline_config
+    return None, [], inline_config
+
+
+def classify_git_command(command: str) -> str | None:
+    """Classify a single, simple git/gh command as 'local', 'publish', or None.
+    Assumes command_shell_violation(command) is None (one simple command, so
+    shlex.split is safe and there's nothing chained after the verb)."""
+    try:
+        toks = shlex.split(command.strip())
+    except ValueError:
+        return None
+    if not toks:
+        return None
+    prog = os.path.basename(toks[0])
+
+    if prog == "git":
+        sub, args, inline_config = _git_subcommand(toks[1:])
+        if sub is None:
+            return None
+        if inline_config:
+            return None  # `git -c <cfg> …` can run arbitrary code; never auto-trust
+        if sub == "push":
+            return "publish"
+        if sub in _GIT_LOCAL_SUBCMDS:
+            return "local"
+        if sub in ("checkout", "switch"):
+            # Only branch CREATION is autonomous; a bare checkout/switch of a
+            # path or existing branch can revert working-tree changes, so it
+            # falls through to the plan's allowlist.
+            return "local" if any(a in _GIT_BRANCH_CREATE_FLAGS for a in args) else None
+        return None
+
+    if prog == "gh":
+        nonopt = [t for t in toks[1:] if not t.startswith("-")]
+        if nonopt[:2] in (["pr", "create"], ["pr", "ready"]):
+            return "publish"
+        if nonopt[:1] == ["release"]:
+            return "publish"
+        return None
+
+    return None
+
+
+def git_push_target(command: str) -> tuple[bool, str | None]:
+    """Inspect a command for `git … push …`. Returns:
+      (False, None) — not a git push at all.
+      (True, None)  — a push whose destination branch can't be determined
+                      (e.g. bare `git push`, or `git push origin` with no refspec).
+      (True, name)  — a push to destination branch `name`.
+    Used to enforce that pushes only ever target a branch the plan declared."""
+    try:
+        toks = shlex.split(command.strip())
+    except ValueError:
+        return (False, None)
+    if not toks or os.path.basename(toks[0]) != "git":
+        return (False, None)
+    sub, args, inline_config = _git_subcommand(toks[1:])
+    if sub != "push":
+        return (False, None)
+    if inline_config:
+        return (True, None)  # a push we can't vouch for → blocked by the hook
+    # Positional args after 'push' — forms: `push <remote> <refspec>`,
+    # `push <remote>`, `push`. Skip flags (none of push's flags take a separate
+    # positional value we'd mistake for a refspec in normal use).
+    positionals = [a for a in args if not a.startswith("-")]
+    if len(positionals) < 2:
+        return (True, None)
+    refspec = positionals[1].lstrip("+")          # +src:dst force form
+    dst = refspec.split(":", 1)[1] if ":" in refspec else refspec
+    if dst.startswith("refs/heads/"):
+        dst = dst[len("refs/heads/"):]
+    return (True, dst or None)
+
+
+def plan_branches(compiled: dict[str, Any]) -> set[str]:
+    """All branch names declared across the plan's repos."""
+    out: set[str] = set()
+    for cfg in compiled.get("repos", {}).values():
+        if isinstance(cfg, dict) and cfg.get("branch"):
+            out.add(cfg["branch"])
+    return out
+
+
+# --- Branch-first enforcement ------------------------------------------------
+# The harness REQUIRES that every change land on a new branch: an Edit/Write into
+# a repo is blocked until that repo's HEAD is on the plan's declared branch (see
+# branch_gate_violation, called from pre-tool-hook.py). For that to mean "a new
+# branch" rather than "main", the plan's branch must not BE a default branch —
+# heuristic_scan rejects main/master/HEAD so a plan can't declare its way around
+# the gate.
+DEFAULT_BRANCH_NAMES = {"main", "master", "head"}
+
+
+def is_default_branch_name(name: str) -> bool:
+    return name.strip().lower() in DEFAULT_BRANCH_NAMES
+
+
+def repo_slug_for_path(path: str) -> str | None:
+    """The repo slug a tool path lands in, or None if the path is not under
+    /workspace/repos/<slug>/<rel>. Mirrors check_path_allowed's prefix parsing."""
+    if not path.startswith(REPOS_PREFIX):
+        return None
+    remainder = path[len(REPOS_PREFIX):]
+    if "/" not in remainder:
+        return None
+    return remainder.split("/", 1)[0]
+
+
+def branch_gate_violation(slug: str, declared: str | None, current: str | None) -> str | None:
+    """Decide whether editing repo `slug` is allowed under branch-first. Returns
+    None if allowed (no branch declared to enforce, or the repo is already on its
+    declared branch); otherwise a human-readable reason to block. Pure on purpose
+    — the hook resolves `current` via git and passes it in, so this is testable
+    without a working tree."""
+    if not declared:
+        return None  # nothing to pin against (schema requires branch, so rare)
+    if current == declared:
+        return None
+    return (
+        f"repo {slug!r} is on branch {current or '(unknown)'!r}, not the plan's "
+        f"branch {declared!r}. The harness requires every change to land on a NEW "
+        f"branch, so edits are blocked until the repo is on it. Run "
+        f"`git -C {REPOS_PREFIX}{slug} checkout -b {declared}` first, then retry."
+    )
 
 
 def fail(code: int, msg: str) -> None:
@@ -240,7 +483,31 @@ def heuristic_scan(
         findings.append(f"HARD: plan exceeds 200KB ({len(plan_text)} bytes) — refusing")
 
     # Cross-reference: every step.repo must match a key in scope.repos.
-    declared_repos = set((plan.get("scope") or {}).get("repos", {}).keys())
+    scope_repos = (plan.get("scope") or {}).get("repos", {})
+    declared_repos = set(scope_repos.keys())
+
+    # Branch-first: each repo's declared branch must be a NEW branch, never a
+    # default one. The apply hook blocks edits until the repo is on this branch,
+    # so a plan declaring `branch: main` would let changes land on main and defeat
+    # the gate. (The schema already requires `branch`; this catches the value.)
+    for slug, cfg in scope_repos.items():
+        if isinstance(cfg, dict):
+            branch = cfg.get("branch")
+            if isinstance(branch, str) and is_default_branch_name(branch):
+                findings.append(
+                    f"HARD: repo {slug!r} declares branch {branch!r}, a default "
+                    f"branch; the plan's branch must be a NEW branch so changes "
+                    f"don't land on main/master"
+                )
+            # A '..' in a declared path escapes the repo subtree at edit time
+            # (check_path_allowed also blocks it, but flag at promote so a path
+            # that means to traverse never gets approved in the first place).
+            for fp in cfg.get("file_paths", []):
+                if isinstance(fp, str) and ".." in fp.split("/"):
+                    findings.append(
+                        f"HARD: repo {slug!r} file_path {fp!r} contains a '..' "
+                        f"segment; paths must stay within the repo subtree"
+                    )
 
     # Config-level allowlist: scope.repos may only name slugs declared in
     # repos.yaml's `apply:` list. Bounds what apply can touch at the config
@@ -287,6 +554,41 @@ def compile_allowlist(plan: dict[str, Any], out_path: Path) -> None:
     out_path.write_text(json.dumps(compiled, indent=2))
 
 
+def format_compiled_summary(
+    compiled: dict[str, Any], *, indent: str = "  ", max_files: int = 5, max_cmds: int = 8
+) -> str:
+    """Render the in-scope-repos / commands / aws portion of a compiled allowlist
+    as a human-readable block. Single source of truth for the plan summary the
+    apply load banner (load-plan.sh) and the host promote preview (plan-promote.sh)
+    both print — so the two never drift, and neither has to interpolate the
+    compiled path into a heredoc (they read it from the env and call this)."""
+    def _fmt_list(items: list, limit: int) -> str:
+        if not items:
+            return "(none)"
+        shown = ", ".join(str(x) for x in items[:limit])
+        extra = len(items) - limit
+        return shown + (f" … (+{extra} more)" if extra > 0 else "")
+
+    repos = compiled.get("repos", {})
+    cmds = compiled.get("allowed_command_prefixes", [])
+    aws = compiled.get("aws_resources", [])
+
+    lines = [f"{indent}in-scope repos ({len(repos)}):"]
+    if not repos:
+        lines.append(f"{indent}  (none)")
+    for slug, cfg in repos.items():
+        cfg = cfg if isinstance(cfg, dict) else {}
+        files = cfg.get("file_paths", [])
+        lines.append(f"{indent}  • {slug} → {cfg.get('github', '?')}")
+        lines.append(f"{indent}      branch:     {cfg.get('branch', '?')}")
+        lines.append(f"{indent}      file_paths: {_fmt_list(files, max_files)}")
+    lines.append(f"{indent}commands ({len(cmds)}): {_fmt_list(cmds, max_cmds)}")
+    lines.append(
+        f"{indent}aws_resources: {len(aws)} (informational — apply env has no AWS access)"
+    )
+    return "\n".join(lines)
+
+
 def check_path_allowed(path: str, compiled: dict[str, Any]) -> bool:
     """
     Plan scope is per-repo: scope.repos.<slug>.file_paths is the list for that repo.
@@ -296,6 +598,16 @@ def check_path_allowed(path: str, compiled: dict[str, Any]) -> bool:
     Anything outside /workspace/repos/ is rejected — the agent has no business
     writing to /workspace/hooks/ or /workspace/target-state/ etc.
     """
+    # Reject any '..' path segment BEFORE matching. The file_paths globs match on
+    # a string prefix (`src/**` → startswith("src/")), so without this an approved
+    # `src/**` plan would allow `src/../../../etc/cron.d/pwn`,
+    # `src/../../other-repo/...`, or `src/../../../home/dev/.claude/settings.json`
+    # (overwriting this hook's own config). The '..' lives only in the tool-call
+    # path, which the human never reviews — the promote diff shows only `src/**` —
+    # so this is the sole line of defense at edit time.
+    if ".." in path.split("/"):
+        return False
+
     if not path.startswith(REPOS_PREFIX):
         return False
 
@@ -326,6 +638,13 @@ def check_command_allowed(command: str, compiled: dict[str, Any]) -> bool:
     # library function is protected too.)
     if command_shell_violation(cmd) is not None:
         return False
+    # The git/gh workflow (branch → add → commit, plus push and open-PR) is
+    # built in for every plan, so it need not appear in allowed_command_prefixes.
+    # Publish verbs are allowed HERE but separately held by the publish-approval
+    # gate (and a push is additionally checked against the plan's branches) in
+    # pre-tool-hook.py.
+    if classify_git_command(cmd) is not None:
+        return True
     for prefix in compiled.get("allowed_command_prefixes", []):
         if cmd.startswith(prefix):
             return True

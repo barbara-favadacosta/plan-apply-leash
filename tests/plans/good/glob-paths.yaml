@@ -1,0 +1,27 @@
+plan_id: 2026-06-10-good-glob-paths
+description: >
+  A valid plan that scopes a whole subtree with a trailing '/**' glob in
+  file_paths, alongside an exact file. Exercises the schema's directory-glob
+  support, which check_path_allowed honors.
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: feature/glob
+      pr_title: "Refactor the handlers package"
+      file_paths:
+        - src/handlers/**
+        - README.md
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit a handler inside the globbed subtree
+    path: src/handlers/auth.ts
+  - id: 2
+    repo: foo-service
+    type: command
+    description: Run tests
+    command_prefix: npm test

@@ -105,11 +105,24 @@ Mode: WRITE across the repos named in the approved plan.
     outside this harness.
   - Your GitHub token is scoped to the in-scope repos; calls outside
     scope are rejected server-side.
-  - PUBLISH CHECKPOINT: do all editing and testing autonomously, but
-    `git commit`, `git push`, and `gh pr create` are PAUSED until the human
-    approves. When the code changes are complete, STOP, summarize what changed
-    per repo, and ASK the user to approve publishing. Don't try to work around
-    the pause — after they approve, commit, push, and open the PR.
+  - REQUIRED WORKFLOW for every plan, per in-scope repo, IN THIS ORDER:
+      1. Create the branch the plan names FIRST — before any edit:
+         `git -C /workspace/repos/<slug> checkout -b <branch>`
+         This is ENFORCED, not advice: the hook BLOCKS every Edit/Write into a
+         repo until that repo's HEAD is on the plan's declared branch. If you
+         try to edit first, you'll be told to create the branch and retry.
+      2. Make the edits and run any tests.
+      3. Commit locally: `git -C /workspace/repos/<slug> add …` then
+         `git -C /workspace/repos/<slug> commit -m "…"`.
+    Branch / add / commit run autonomously — they are built into the harness
+    and do NOT need to be in allowed_command_prefixes. `cd` is blocked; always
+    operate on a repo with `git -C /workspace/repos/<slug> …`.
+  - PUBLISH CHECKPOINT: branching, editing, testing, and committing are
+    autonomous, but `git push` and `gh pr create` are PAUSED until the human
+    approves. When every in-scope repo is committed, STOP, summarize what
+    changed per repo, and ASK the user to approve publishing. Don't try to work
+    around the pause — after they approve, push the plan's branch (pushes may
+    only target the branch the plan declared) and open the PR.
 
 Plan in effect:
 """
@@ -235,7 +248,8 @@ def apply_main() -> None:
     cmd_prefixes = compiled.get("allowed_command_prefixes", [])
     aws_resources = compiled.get("aws_resources", [])
     publish_gate = _paths.require_publish_approval()
-    publish_line = ("PAUSED — commit/push/PR need approval (scripts/approve-publish.sh)"
+    publish_line = ("push/PR PAUSED — commit runs autonomously; push & PR need "
+                    "approval (scripts/approve-publish.sh)"
                     if publish_gate else "auto (approval disabled)")
 
     def fmt_list(items: list, limit: int = 5) -> str:
@@ -290,9 +304,10 @@ def apply_main() -> None:
         "Read the full plan at /workspace/target-state/approved-plans/current.yaml "
         "for step-by-step intent. The PreToolUse hook enforces the per-repo scope "
         "above; do not attempt actions outside it."
-        + ("\n\nPUBLISH CHECKPOINT: editing is autonomous, but git commit / git push / "
-           "gh pr create are paused until the user approves (scripts/approve-publish.sh). "
-           "When the changes are complete, STOP, summarize per repo, and ASK to publish."
+        + ("\n\nPUBLISH CHECKPOINT: branch → edit → commit is autonomous, but git push "
+           "and gh pr create are paused until the user approves (scripts/approve-publish.sh). "
+           "When every in-scope repo is committed, STOP, summarize per repo, and ASK to "
+           "publish. Pushes may only target the branch the plan declared."
            if publish_gate else "")
     )
     emit_context(APPLY_CONTEXT_HEADER + context_body)

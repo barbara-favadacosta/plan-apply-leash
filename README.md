@@ -155,10 +155,23 @@ scope:
       github: acme/foo-service
       branch: feature/bump-logger-v2
       file_paths: [package.json, src/logger.ts, src/handler.ts]
-  allowed_command_prefixes: [npm install, npm test, git push origin, gh pr create]
+  allowed_command_prefixes: [npm install, npm test]   # build/test only
 steps:
   - { id: 1, repo: foo-service, type: file_edit, path: package.json }
 ```
+
+`allowed_command_prefixes` is for **build/test** commands only. The git
+lifecycle — create the plan's `branch`, stage, commit, and (after you approve)
+push to that branch and open the PR — is **built into the harness** and runs for
+every plan, so you don't list `git`/`gh` there. Branch, add, and commit run
+autonomously; `git push` and `gh pr create` wait for your approval, and a push
+may only target the `branch` the plan declared.
+
+`branch` is **required** for every repo and must be a new branch (not
+`main`/`master`) — the harness **enforces branch-first**: the per-call hook
+blocks every `Edit`/`Write` into a repo until that repo is on its declared
+branch, so changes can't land anywhere but a fresh branch. Creating the branch
+isn't a step the agent might skip; it's the gate the first edit hits.
 
 **2 · Review + promote** — on the host (a plain terminal works; you don't need to
 take the research window out of its container):
@@ -178,10 +191,11 @@ review catches coordination mistakes no hook can.
 **3 · Apply** — in the **leash-apply** window, run **Developer: Reload Window** to
 pick up the freshly-promoted plan (the `postAttachCommand` recompiles
 `current.yaml` into the enforced allowlist on every attach), then run `claude` and
-tell it to carry out `current.yaml`. It edits and tests on its own. Before each `Bash`,
-`Edit`, or `Write`, a check (the per-call hook) compares the action against the
-per-repo allowlist, and every action is recorded to
-`target-state/audit/tally.jsonl`.
+tell it to carry out `current.yaml`. For each in-scope repo it creates the plan's
+branch first (its first edit is blocked until it does), then edits, tests, and
+commits — all on its own. Before each `Bash`, `Edit`, or `Write`, a check (the
+per-call hook) compares the action against the per-repo allowlist and enforces
+branch-first, and every action is recorded to `target-state/audit/tally.jsonl`.
 
 > **Reload vs. rebuild.** A plain **Reload Window** is all it takes to load a
 > newly-promoted plan — no rebuild between plans. You only need **Rebuild
@@ -190,11 +204,14 @@ per-repo allowlist, and every action is recorded to
 > validation, the apply env comes up *locked* (every call blocked) rather than
 > running the previous plan — fix the plan, re-promote, and reload.
 
-Publishing is held back on purpose: `git commit`/`push` and `gh pr create` stay
-**paused** until you run `scripts/approve-publish.sh` on the host. That script
-creates a small marker file the agent itself isn't allowed to create — which is
-what makes the pause real. You approve once per session. If you'd rather let it
-publish fully on its own, set `APPLY_REQUIRE_PUBLISH_APPROVAL=0` in
+Branching, editing, and committing run autonomously, but **publishing is held
+back on purpose**: `git push` and `gh pr create` stay **paused** until you run
+`scripts/approve-publish.sh` on the host. So when the agent stops and asks, your
+changes are already committed on the plan's branch in each repo — you review
+those local commits, then approve. That script creates a small marker file the
+agent itself isn't allowed to create — which is what makes the pause real. You
+approve once per plan (a push can only target the branch the plan declared). If
+you'd rather let it publish fully on its own, set `APPLY_REQUIRE_PUBLISH_APPROVAL=0` in
 [`.devcontainer/apply/devcontainer.template.json`](.devcontainer/apply/devcontainer.template.json)
 and rebuild.
 

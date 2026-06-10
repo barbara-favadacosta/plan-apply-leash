@@ -1,0 +1,21 @@
+plan_id: 2026-06-10-branch-default-name
+description: >
+  Schema-valid plan that declares branch `main` for a repo. Branch-first
+  enforcement requires a NEW branch, so the validator must reject a default
+  branch name on heuristics (exit 2) — otherwise edits would land on main.
+scope:
+  repos:
+    foo-service:
+      github: acme/foo-service
+      branch: main
+      pr_title: "Sneak a change onto main"
+      file_paths:
+        - package.json
+  allowed_command_prefixes:
+    - npm test
+steps:
+  - id: 1
+    repo: foo-service
+    type: file_edit
+    description: Edit a file but target the default branch
+    path: package.json
