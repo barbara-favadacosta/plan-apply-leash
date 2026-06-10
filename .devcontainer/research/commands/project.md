@@ -1,23 +1,31 @@
 ---
 description: Start or switch to a research project — scaffolds its drafts/notes/clones subfolders and scopes the session to it
-argument-hint: <project_name>
-allowed-tools: Bash(mkdir:*), Bash(find:*), Bash(echo:*), Bash(tr:*)
+argument-hint: <project-slug>
+allowed-tools: Bash(test:*), Bash(mkdir:*), Bash(find:*), Bash(sort:*)
 ---
 
 ## Active project setup
 
-Scaffolding subfolders (created only if missing) and listing any existing files for this project:
+Active project: **$ARGUMENTS** _(no name given → the `default` project)_
 
-!`raw="$ARGUMENTS"; p=$(echo "$raw" | tr ' ' '_' | tr -cd '[:alnum:]_-'); [ -z "${p//_/}" ] && p=default; base=/workspace/target-state/research; for d in drafts notes clones; do mkdir -p "$base/$d/$p"; done; echo "Active project slug: $p"; [ "$p" = default ] && echo "(no name given → using the default project)"; echo "--- existing files ---"; found=$(find "$base/drafts/$p" "$base/notes/$p" "$base/clones/$p" -type f 2>/dev/null | sort); if [ -z "$found" ]; then echo "(none — this is a new/empty project)"; else echo "$found"; fi`
+> Pass a simple slug — lowercase, dashes, no spaces or punctuation (e.g. `/project june-s3-buckets`). The name is used verbatim as the folder name, so a clean slug keeps the layout tidy. With no argument, the `default` project is used.
+
+Scaffolding the three subfolders (created only if missing):
+
+!`test -z "$ARGUMENTS" && mkdir -p "/workspace/target-state/research/drafts/default" "/workspace/target-state/research/notes/default" "/workspace/target-state/research/clones/default" || mkdir -p "/workspace/target-state/research/drafts/$ARGUMENTS" "/workspace/target-state/research/notes/$ARGUMENTS" "/workspace/target-state/research/clones/$ARGUMENTS"`
+
+Existing files for this project (an empty list means it's new/empty):
+
+!`test -z "$ARGUMENTS" && find "/workspace/target-state/research/drafts/default" "/workspace/target-state/research/notes/default" "/workspace/target-state/research/clones/default" -type f 2>/dev/null | sort || find "/workspace/target-state/research/drafts/$ARGUMENTS" "/workspace/target-state/research/notes/$ARGUMENTS" "/workspace/target-state/research/clones/$ARGUMENTS" -type f 2>/dev/null | sort`
 
 ## Scoping rules for this session
 
-For the **rest of this session**, treat the project slug shown above as the single active research project. Apply these rules until I say otherwise:
+For the **rest of this session**, treat `$ARGUMENTS` (or `default` if no name was given) as the single active research project. Apply these rules until I say otherwise:
 
-- **Read context only** from that project's three subfolders:
-  - `/workspace/target-state/research/drafts/<slug>/`
-  - `/workspace/target-state/research/notes/<slug>/`
-  - `/workspace/target-state/research/clones/<slug>/`
+- **Read context only** from that project's three subfolders under `/workspace/target-state/research/`:
+  - `drafts/<slug>/`
+  - `notes/<slug>/`
+  - `clones/<slug>/`
 - **Write every new file** into the matching subfolder, following the harness taxonomy:
   - apply-bound deliverables + the candidate plan → `drafts/<slug>/`
   - investigation write-ups, analyses, inventories, scratch reasoning → `notes/<slug>/`
