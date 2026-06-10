@@ -33,6 +33,8 @@
   },
 
   "postCreateCommand": "bash /workspace/.devcontainer/research/post-create.sh",
+  "//postStart": "Re-arm the egress firewall on every container START (not just create). postCreateCommand runs once at creation; a plain restart (Docker/daemon/machine reboot) skips it, leaving squid dead and iptables wiped while HTTPS_PROXY still points at :3128 — proxied clients then fail with ECONNREFUSED. init-firewall.sh is idempotent, so re-running it here is safe.",
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh \"${ALL_ALLOWED_DOMAINS:-}\"",
 
   "customizations": {
     "vscode": {

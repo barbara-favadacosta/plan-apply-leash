@@ -32,6 +32,7 @@ EXTRA="${1:-${ALLOWED_DOMAINS_EXTRA:-}}"
 # both paths (proxy + pinned-IP fallback); any extra domains get the proxy only.
 BASE_DOMAINS=(
   "api.anthropic.com"
+  "platform.claude.com"
   "statsig.anthropic.com"
   "claude.ai"
   "api.github.com"
@@ -93,13 +94,31 @@ httpd_suppress_version_string on
 EOF
 
 squid -k parse -f /etc/squid/squid.conf   # fail loudly on a bad allowlist
+
+# Idempotent (re)start: this script runs from BOTH postCreateCommand and
+# postStartCommand, so on a container restart a squid from the previous start may
+# still hold :3128 — the `squid -f` below would then FATAL with "already running".
+# Hard-stop any existing instance and clear its pid file first. We SIGKILL rather
+# than `-k shutdown` because a graceful shutdown waits out shutdown_lifetime
+# (~30s), long enough that `squid -f` would still collide with it.
+# (Without re-arming on start, a plain container restart leaves squid dead while
+# HTTPS_PROXY still points at :3128 — every proxied client then gets ECONNREFUSED.)
+squid -k kill -f /etc/squid/squid.conf >/dev/null 2>&1 || true
+pkill -9 -x squid >/dev/null 2>&1 || true
+rm -f /run/squid/squid.pid
+for _ in $(seq 1 30); do ss -ltn 2>/dev/null | grep -q ':3128' || break; sleep 0.2; done
+
 squid -f /etc/squid/squid.conf             # daemonizes, drops to the proxy user
 
 # ── 2. iptables: force everything through squid, with a base-IP fallback ─────
 iptables -F OUTPUT
 iptables -P OUTPUT DROP
-ipset destroy egress-allow 2>/dev/null || true
-ipset create egress-allow hash:ip family inet hashsize 1024 maxelem 65536
+# Create-if-absent then flush, rather than destroy+create: `ipset destroy` fails
+# while the set is still referenced by an OUTPUT rule, so on a re-run (postStart)
+# this is the idempotent path. The `iptables -F OUTPUT` above already dropped the
+# references; flush just empties the set so the resolve loop below repopulates it.
+ipset create egress-allow hash:ip family inet hashsize 1024 maxelem 65536 2>/dev/null || true
+ipset flush egress-allow
 
 iptables -A OUTPUT -o lo -j ACCEPT                                   # → squid on 127.0.0.1:3128
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT                       # DNS (squid resolves CONNECT targets)
