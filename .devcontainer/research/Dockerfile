@@ -3,8 +3,10 @@
 # well-supported Linux for everything else we install below.
 FROM mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
 
-# Non-root user the container will run as. UID 1000 matches a typical host UID
-# so files we create in bind-mounted directories have sensible ownership.
+# Non-root user the container will run as. UID 1000 is the conventional first
+# non-root uid on Linux; it does NOT match the macOS host user (uid 501), so
+# bind-mounted repos appear owned by a foreign uid inside the container. git's
+# dubious-ownership guard is handled separately via safe.directory below.
 ARG USERNAME=dev
 ARG UID=1000
 
@@ -61,6 +63,11 @@ RUN chmod +x /usr/local/bin/init-firewall.sh
 # require root, but we don't want dev to have general root.
 RUN echo "${USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/init-firewall \
  && chmod 0440 /etc/sudoers.d/init-firewall
+
+# Bind-mounted repos come from the host (uid 501 on macOS) and so are NOT owned by the
+# container's dev user (uid 1000). git's dubious-ownership guard would refuse every repo.
+# Trust them at the image layer (writes /etc/gitconfig; must be root, before USER switch).
+RUN git config --system --add safe.directory '*'
 
 # From here on, anything that runs in the container runs as the unprivileged dev user.
 # /workspace is where devcontainer.json bind-mounts the project.
