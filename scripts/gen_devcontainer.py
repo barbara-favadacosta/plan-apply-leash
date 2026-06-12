@@ -64,6 +64,12 @@ from research_access import load as load_research_access, ResearchAccessError, R
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPOS_YAML = REPO_ROOT / "repos.yaml"
 RESEARCH_ACCESS_YAML = REPO_ROOT / "research-access.yaml"
+# Mutable per-target state. Lives at the repo root, a SIBLING of app/ — and
+# /workspace is bound to app/, so state/ is NOT inside the workspace bind. Each
+# env gets only the subtrees it needs, mounted explicitly below with the right
+# RW/RO. That is how research-state is kept out of apply: it is simply never
+# mounted there, enforced by the kernel rather than by a settings deny.
+STATE_ROOT = REPO_ROOT / "state"
 SLUG_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 # GitHub owner/repo, matching the plan schema's `github` pattern.
 GH_REPO_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
@@ -84,6 +90,10 @@ TARGETS = [
         "token_file_var": "GH_TOKEN_RESEARCH_FILE",
         "secret_file": "secrets.research.env",
         "wants_infra": True,  # research mounts read-only platforms from research-access.yaml
+        # (state_subtree, container_target, readonly). Research writes drafts/clones/
+        # notes; it never sees approved-plans or audit.
+        "state_mounts": [("research", "/workspace/target-state/research", False)],
+        "mount_repos_yaml": False,
     },
     {
         "name": "apply",
@@ -93,6 +103,15 @@ TARGETS = [
         "token_file_var": "GH_TOKEN_APPLY_FILE",
         "secret_file": "secrets.apply.env",
         "wants_infra": False,  # apply gets no platform credentials, ever
+        # Apply gets the approved plan READ-ONLY (kernel-enforced — the agent
+        # can't alter the approved plan even if a settings deny is missed) plus a
+        # read-write audit dir for the tally + compiled allowlist. It does NOT get
+        # research/ at all — that subtree is simply absent from this list.
+        "state_mounts": [
+            ("approved-plans", "/workspace/target-state/approved-plans", True),   # RO
+            ("audit",          "/workspace/target-state/audit",          False),  # RW
+        ],
+        "mount_repos_yaml": True,  # load-plan's --apply-repos allowlist re-check
     },
 ]
 
@@ -340,6 +359,24 @@ def render(
     repo_flags = "type=bind,readonly,consistency=cached" if target["readonly"] else "type=bind,consistency=cached"
     for slug, host_path in repos:
         mounts.append(f"source={host_path},target=/workspace/repos/{slug},{repo_flags}")
+
+    # State-subtree mounts: each env gets only the subtrees it needs, with the
+    # right RW/RO. Emitted as ABSOLUTE host paths (like the repo mounts above) —
+    # they point under the repo root's state/, which is OUTSIDE the
+    # ${localWorkspaceFolder}/app workspace bind, so it can't be expressed
+    # relative to it. The bind SOURCE must exist before launch (Docker otherwise
+    # auto-creates it root-owned), so mkdir each here, owned by whoever runs this.
+    for sub, container_target, readonly in target.get("state_mounts", []):
+        host = STATE_ROOT / sub
+        host.mkdir(parents=True, exist_ok=True)
+        state_flags = "type=bind,readonly,consistency=cached" if readonly else "type=bind,consistency=cached"
+        mounts.append(f"source={host},target={container_target},{state_flags}")
+
+    # repos.yaml: apply needs it read-only for load-plan.sh's --apply-repos
+    # allowlist re-check. It's no longer reachable via a whole-repo /workspace
+    # bind, so mount it explicitly. (Research doesn't use it.)
+    if target.get("mount_repos_yaml"):
+        mounts.append(f"source={REPOS_YAML},target=/workspace/repos.yaml,type=bind,readonly,consistency=cached")
 
     # Research focus scope: newline-joined owner/repo list the agent should stay
     # within. Only set when non-empty; unset means "roam whatever the PAT allows".

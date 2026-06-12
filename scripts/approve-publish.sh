@@ -9,14 +9,14 @@
 #
 # Run it from the host (in the repo) OR from a non-agent shell in the container.
 # The agent itself cannot run this (it isn't an allowed command) or create the
-# sentinel (target-state is write-denied) — that's what makes the pause real.
+# sentinel (the state dir is write-denied) — that's what makes the pause real.
 set -euo pipefail
 
 if [ -n "${APPLY_PUBLISH_APPROVED_FILE:-}" ]; then
   SENTINEL="${APPLY_PUBLISH_APPROVED_FILE}"                    # inside the container
 else
   REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"               # on the host
-  SENTINEL="${REPO_ROOT}/target-state/audit/publish-approved"
+  SENTINEL="${REPO_ROOT}/state/audit/publish-approved"
 fi
 
 mkdir -p "$(dirname "${SENTINEL}")"

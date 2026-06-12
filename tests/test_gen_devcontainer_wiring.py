@@ -13,6 +13,7 @@ Needs pyyaml (the resolver reads YAML). Run:
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -84,6 +85,90 @@ class WiringTest(unittest.TestCase):
         # Untouched: no mounts, no features, no containerEnv — even though the
         # very same resolved research-access is passed in.
         self.assertEqual(config, {})
+
+
+class StateMountTest(unittest.TestCase):
+    """The structural isolation invariant of Plan A: state/ lives outside the
+    app/→/workspace bind, and each env mounts only the subtrees it needs. Apply
+    must NEVER get a research-state mount; research must NEVER get approved-plans
+    or audit. We drive the real render() with the real TARGETS config so the
+    assertions track whatever the shipped config says."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.gen_dir = self.tmp / "gen"
+        self.gen_dir.mkdir()
+        os.environ.pop("ALLOWED_DOMAINS_EXTRA", None)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _render(self, name: str) -> dict:
+        """Render the named real target to a temp output and return the parsed
+        devcontainer config (the // banner lines are stripped before json.loads)."""
+        src = next(t for t in gd.TARGETS if t["name"] == name)
+        target = dict(src)
+        target["output"] = self.tmp / f"{name}.devcontainer.json"
+        gd.render(
+            target,
+            repos=[],
+            gen_dir=self.gen_dir,
+            token="dummy-token",
+            research_scope=[],
+            research_access=research_access.Resolved(),
+        )
+        text = target["output"].read_text()
+        body = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("//"))
+        return json.loads(body)
+
+    def test_workspace_mount_points_at_app(self):
+        for name in ("research", "apply"):
+            cfg = self._render(name)
+            self.assertRegex(
+                cfg["workspaceMount"], r"source=[^,]*/app,target=/workspace",
+                f"{name}: workspaceMount source must end in /app",
+            )
+
+    def test_apply_never_mounts_research_state(self):
+        mounts = self._render("apply")["mounts"]
+        self.assertFalse(
+            any("/workspace/target-state/research" in m for m in mounts),
+            "apply must NOT mount any research state — that's the whole point",
+        )
+
+    def test_apply_gets_readonly_approved_plans_rw_audit_and_repos_yaml(self):
+        mounts = self._render("apply")["mounts"]
+
+        def find(target_path):
+            return [m for m in mounts if f"target={target_path}," in m or m.endswith(f"target={target_path}")]
+
+        approved = find("/workspace/target-state/approved-plans")
+        self.assertTrue(approved, "apply must mount approved-plans")
+        self.assertTrue(all("readonly" in m for m in approved),
+                        "approved-plans must be read-only in apply")
+
+        audit = find("/workspace/target-state/audit")
+        self.assertTrue(audit, "apply must mount the audit dir")
+        self.assertTrue(all("readonly" not in m for m in audit),
+                        "audit must be read-write in apply (tally appends)")
+
+        repos_yaml = [m for m in mounts if "target=/workspace/repos.yaml," in m]
+        self.assertTrue(repos_yaml, "apply must mount repos.yaml for the --apply-repos re-check")
+        self.assertTrue(all("readonly" in m for m in repos_yaml),
+                        "repos.yaml must be read-only in apply")
+
+    def test_research_mounts_only_research_state(self):
+        mounts = self._render("research")["mounts"]
+        self.assertTrue(
+            any("/workspace/target-state/research" in m for m in mounts),
+            "research must mount its research-state subtree",
+        )
+        self.assertFalse(
+            any("/workspace/target-state/approved-plans" in m or "/workspace/target-state/audit" in m
+                for m in mounts),
+            "research must NOT see approved-plans or audit",
+        )
 
 
 if __name__ == "__main__":

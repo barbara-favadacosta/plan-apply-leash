@@ -139,7 +139,7 @@ ask it to investigate and draft a plan. For example:
 > bump it to v2 across both.*
 
 Drafts are organized into per-project subfolders. By default the agent writes to
-`target-state/research/drafts/default/<plan_id>.yaml`; run `/project <name>` in
+`state/research/drafts/default/<plan_id>.yaml`; run `/project <name>` in
 the session to switch to a named project (`drafts/<name>/…` instead). See the
 [schema](app/plans/schema.json) for every field and [example-plan.yaml](app/plans/example-plan.yaml)
 for a full plan. Bypass is safe here — the env is read-only.
@@ -178,14 +178,14 @@ take the research window out of its container):
 
 ```bash
 scripts/plan-promote.sh <plan_id>.yaml                       # default project
-scripts/plan-promote.sh target-state/research/drafts/<name>/<plan_id>.yaml  # named project
+scripts/plan-promote.sh state/research/drafts/<name>/<plan_id>.yaml  # named project
 ```
 
 A bare filename resolves against the `default/` project. For a draft in a named
 project, pass its full path. The script validates the draft, previews the
 compiled per-repo allowlist, and diffs it against the current plan. It then asks
 you to confirm and atomically promotes to
-`target-state/approved-plans/current.yaml`. **This is the trust boundary** — your
+`state/approved-plans/current.yaml`. **This is the trust boundary** — your
 review catches coordination mistakes no hook can.
 
 **3 · Apply** — in the **leash-apply** window, run **Developer: Reload Window** to
@@ -195,7 +195,7 @@ tell it to carry out `current.yaml`. For each in-scope repo it creates the plan'
 branch first (its first edit is blocked until it does), then edits, tests, and
 commits — all on its own. Before each `Bash`, `Edit`, or `Write`, a check (the
 per-call hook) compares the action against the per-repo allowlist and enforces
-branch-first, and every action is recorded to `target-state/audit/tally.jsonl`.
+branch-first, and every action is recorded to `state/audit/tally.jsonl`.
 
 > **Reload vs. rebuild.** A plain **Reload Window** is all it takes to load a
 > newly-promoted plan — no rebuild between plans. You only need **Rebuild
@@ -289,7 +289,7 @@ single repo.
 - **`BLOCKED: outside scope.file_paths`** → this means the hook is doing its job.
   Either widen the plan and re-promote it, or stop the agent. Don't hand-edit the
   generated allowlist — it's rebuilt from the plan every time apply starts.
-- **Audit log huge** → `target-state/audit/tally.jsonl` is append-only; archive
+- **Audit log huge** → `state/audit/tally.jsonl` is append-only; archive
   it.
 
 ## Repository tour
@@ -306,5 +306,9 @@ single repo.
 - `scripts/` — `setup.sh`, `gen_devcontainer.py`, `research_access.py`,
   `plan-promote.sh`, `approve-publish.sh`. Host-side; stays at the repo root.
 - `examples/` — PAT scopes, AWS and Kubernetes read-only walkthroughs.
-- `target-state/`, `repos.yaml`, `research-access.yaml`, and your real
-  `creds.env` — gitignored / outside the repo, per user.
+- `state/` — mutable per-target state (research drafts, approved plans, audit).
+  A sibling of `app/`, so it's OUTSIDE the workspace bind; each env mounts only
+  the subtrees it needs (research never sees approved-plans/audit, apply never
+  sees research/). Gitignored, per user.
+- `repos.yaml`, `research-access.yaml`, and your real `creds.env` —
+  gitignored / outside the repo, per user.

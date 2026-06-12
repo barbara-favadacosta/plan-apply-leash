@@ -1,5 +1,7 @@
 # Per-target state: drafts, approved plans, audit logs. Per-user, per-machine.
-target-state/
+# Lives at the repo root as a sibling of app/ (which is bound to /workspace), so
+# it stays OUT of the workspace bind and each env mounts only the subtrees it needs.
+state/
 
 # Per-user repo list and the devcontainer.json files generated from it.
 # Edit repos.yaml; scripts/setup.sh regenerates the two devcontainer.json files.

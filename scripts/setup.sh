@@ -3,7 +3,7 @@
 #
 # Walks every prerequisite and prints a green/red checklist so you know
 # exactly what's missing before opening a devcontainer. Also creates the
-# target-state directory layout that the bind mounts expect to exist.
+# state/ directory layout that the bind mounts expect to exist.
 
 set -uo pipefail
 
@@ -108,14 +108,18 @@ else
   fi
 fi
 
-# ─── Target-state scaffolding ─────────────────────────────────────────────
-section "Target-state directory scaffolding"
+# ─── State scaffolding ────────────────────────────────────────────────────
+# state/ lives at the repo root, a sibling of app/ (which is bound to /workspace).
+# Keeping it OUTSIDE the workspace bind is what lets each env mount only the
+# subtrees it needs — research never sees approved-plans/audit, apply never sees
+# research/. gen_devcontainer.py also mkdir's the per-env subtrees it mounts.
+section "State directory scaffolding"
 for sub in research/drafts research/clones research/notes approved-plans approved-plans/history audit; do
-  full="${REPO_ROOT}/target-state/${sub}"
+  full="${REPO_ROOT}/state/${sub}"
   if [ -d "${full}" ]; then
-    ok "target-state/${sub}/ exists"
+    ok "state/${sub}/ exists"
   else
-    mkdir -p "${full}" 2>/dev/null && ok "created target-state/${sub}/" || bad "could not create ${full}"
+    mkdir -p "${full}" 2>/dev/null && ok "created state/${sub}/" || bad "could not create ${full}"
   fi
 done
 

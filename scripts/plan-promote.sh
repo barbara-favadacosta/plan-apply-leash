@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # plan-promote.sh — host-side helper to safely promote a researched draft plan
-# into target-state/approved-plans/current.yaml.
+# into state/approved-plans/current.yaml.
 #
 # This script runs on the HOST and is the security-critical handoff between
 # research and apply. It refuses to promote a plan that fails validation,
@@ -15,7 +15,7 @@
 # where <draft> can be:
 #   - an absolute path to a draft yaml
 #   - a path relative to the cwd
-#   - just the filename inside target-state/research/drafts/ (also falls back to
+#   - just the filename inside state/research/drafts/ (also falls back to
 #     the default/ project). For a draft in a NAMED project subfolder, pass its
 #     full path — named projects are not auto-searched.
 
@@ -26,12 +26,12 @@ if [ -z "${DRAFT_ARG}" ]; then
   cat >&2 <<EOF
 usage: $0 <draft-plan>
   draft can be absolute, cwd-relative, or just a filename within
-  target-state/research/drafts/ (bare filenames also fall back to the
+  state/research/drafts/ (bare filenames also fall back to the
   default/ project). For a draft in a named project, pass its full path.
 
 examples:
-  $0 target-state/research/drafts/2026-05-22-bump-logger.yaml
-  $0 target-state/research/drafts/myproj/2026-05-22-bump-logger.yaml  # named project (full path)
+  $0 state/research/drafts/2026-05-22-bump-logger.yaml
+  $0 state/research/drafts/myproj/2026-05-22-bump-logger.yaml  # named project (full path)
   $0 2026-05-22-bump-logger.yaml                              # resolved against drafts/ then drafts/default/
 EOF
   exit 64
@@ -42,8 +42,8 @@ cd "${REPO_ROOT}"
 
 SCHEMA="${REPO_ROOT}/app/plans/schema.json"
 VALIDATOR="${REPO_ROOT}/app/hooks/validate_plan.py"
-DRAFTS_DIR="${REPO_ROOT}/target-state/research/drafts"
-APPROVED_DIR="${REPO_ROOT}/target-state/approved-plans"
+DRAFTS_DIR="${REPO_ROOT}/state/research/drafts"
+APPROVED_DIR="${REPO_ROOT}/state/approved-plans"
 HISTORY_DIR="${APPROVED_DIR}/history"
 CURRENT="${APPROVED_DIR}/current.yaml"
 
@@ -60,13 +60,13 @@ elif [ -f "${DRAFTS_DIR}/default/${DRAFT_ARG}" ]; then
   DRAFT="${DRAFTS_DIR}/default/${DRAFT_ARG}"
   echo "→ resolved bare filename against the default project: ${DRAFT#${REPO_ROOT}/}" >&2
   echo "  (for a named project, pass the full path, e.g." >&2
-  echo "   $0 target-state/research/drafts/<project>/${DRAFT_ARG})" >&2
+  echo "   $0 state/research/drafts/<project>/${DRAFT_ARG})" >&2
 else
   echo "✗ draft not found at: ${DRAFT_ARG}" >&2
   echo "  also tried: ${DRAFTS_DIR}/${DRAFT_ARG}" >&2
   echo "  also tried: ${DRAFTS_DIR}/default/${DRAFT_ARG}" >&2
   echo "  for a draft inside a named project, pass its full path:" >&2
-  echo "    $0 target-state/research/drafts/<project>/${DRAFT_ARG}" >&2
+  echo "    $0 state/research/drafts/<project>/${DRAFT_ARG}" >&2
   exit 66
 fi
 
@@ -163,7 +163,7 @@ NEW_TMP="${APPROVED_DIR}/.current.yaml.new"
 cp "${DRAFT}" "${NEW_TMP}"
 mv -f "${NEW_TMP}" "${CURRENT}"
 
-echo "✓ promoted to target-state/approved-plans/current.yaml"
+echo "✓ promoted to state/approved-plans/current.yaml"
 echo "→ in the apply window, run 'Developer: Reload Window' to pick up the new plan"
 echo "  (Rebuild Container is only needed after re-running setup.sh, which"
 echo "   regenerates devcontainer.json)"
