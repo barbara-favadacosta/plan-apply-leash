@@ -67,8 +67,8 @@ Mode: READ-ONLY.
     named project instead, the user runs `/project <name>`, which switches the
     active project for the rest of the session. Until they do, stay in default/.
   - Edit/Write to /workspace/repos/** and the harness's own files
-    (/workspace/.devcontainer, /workspace/hooks, /workspace/scripts, etc.) is
-    denied at the permission layer. Don't try; it'll fail.
+    (/workspace/hooks, /workspace/plans) is denied at the permission layer.
+    Don't try; it'll fail.
   - Every mounted platform credential is READ-ONLY. git push, git commit,
     gh pr create, and any mutating/write call to a mounted platform (e.g.
     kubectl apply, an AWS mutating action) are denied. Use platforms for

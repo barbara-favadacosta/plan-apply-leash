@@ -40,8 +40,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-SCHEMA="${REPO_ROOT}/plans/schema.json"
-VALIDATOR="${REPO_ROOT}/hooks/validate_plan.py"
+SCHEMA="${REPO_ROOT}/app/plans/schema.json"
+VALIDATOR="${REPO_ROOT}/app/hooks/validate_plan.py"
 DRAFTS_DIR="${REPO_ROOT}/target-state/research/drafts"
 APPROVED_DIR="${REPO_ROOT}/target-state/approved-plans"
 HISTORY_DIR="${APPROVED_DIR}/history"

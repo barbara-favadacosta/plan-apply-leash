@@ -7,9 +7,10 @@ written by validate_plan.py during container startup, and exits non-zero to bloc
 anything outside the approved scope.
 
 Side-effect: appends one line to APPLY_TALLY_PATH (JSONL) per decision. The Stop
-hook reads this to produce a session summary. Now that the tally lives in
-target-state/<slug>/audit/ on the host, it persists across container rebuilds
-and across sessions — entries are filtered by session_id when summarising,
+hook reads this to produce a session summary. Because the tally lives in the
+host's state/audit/ dir (bound into the container at /workspace/target-state/
+audit/), it persists across container rebuilds and across sessions — entries are
+filtered by session_id when summarising,
 so each Stop hook still gets per-session output even though the log itself
 grows over time.
 

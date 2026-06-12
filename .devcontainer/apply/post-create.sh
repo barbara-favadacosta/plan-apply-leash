@@ -7,9 +7,11 @@ set -euo pipefail
 sudo /usr/local/bin/init-firewall.sh "${ALLOWED_DOMAINS_EXTRA:-}"
 
 # Install env-specific settings into the agent's user-level config dir.
-# ~/.claude is the reference agent's config home.
+# ~/.claude is the reference agent's config home. The settings file is baked into
+# the image (see Dockerfile) because the repo's .devcontainer/ is outside the
+# app/→/workspace bind and so not visible inside the container.
 mkdir -p ~/.claude
-cp /workspace/.devcontainer/apply/agent-settings.json ~/.claude/settings.json
+cp /usr/local/share/apply-agent-settings.json ~/.claude/settings.json
 
 # Ensure audit dir exists (for the compiled allowlist + tally).
 mkdir -p /workspace/target-state/audit
@@ -18,4 +20,5 @@ mkdir -p /workspace/target-state/audit
 # on every container attach / VS Code "Reload Window" (postAttachCommand), so a
 # freshly-promoted plan is picked up without a full rebuild. It resets the publish
 # gate when the plan changes and fails closed if the plan is missing/invalid.
-bash /workspace/.devcontainer/apply/load-plan.sh
+# Baked into the image (see Dockerfile) for the same reason as the settings above.
+bash /usr/local/bin/load-plan.sh

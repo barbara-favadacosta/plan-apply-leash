@@ -95,9 +95,9 @@ printf '%s' '<github_pat_token_WRITE_value>' > ~/.config/plan-apply-leash/gh-app
 chmod 600 ~/.config/plan-apply-leash/gh-*.token
 ```
 
-> **Nothing secret goes inside the repo folder.** Both containers mount that
-> folder at `/workspace`, so a token saved there would be readable from the
-> read-only research env — which would defeat the whole split. Instead,
+> **Nothing secret goes inside `app/`.** Both containers mount the repo's `app/`
+> subfolder at `/workspace`, so a token saved under `app/` would be readable from
+> the read-only research env — which would defeat the whole split. Instead,
 > `setup.sh` runs on your own machine, reads the tokens, and hands them to each
 > container through a separate file kept outside `/workspace`. (Your Claude login
 > isn't in `creds.env` either — see step 6.)
@@ -141,7 +141,7 @@ ask it to investigate and draft a plan. For example:
 Drafts are organized into per-project subfolders. By default the agent writes to
 `target-state/research/drafts/default/<plan_id>.yaml`; run `/project <name>` in
 the session to switch to a named project (`drafts/<name>/…` instead). See the
-[schema](plans/schema.json) for every field and [example-plan.yaml](plans/example-plan.yaml)
+[schema](app/plans/schema.json) for every field and [example-plan.yaml](app/plans/example-plan.yaml)
 for a full plan. Bypass is safe here — the env is read-only.
 
 A plan is the handoff; anything outside `file_paths` / `allowed_command_prefixes`
@@ -295,13 +295,16 @@ single repo.
 ## Repository tour
 
 - `.devcontainer/{research,apply}/` — the two envs; `devcontainer.json` is
-  gitignored, regenerated from `repos.yaml` + `creds.env`.
-- `hooks/` — agent-agnostic gate: `pre-tool-hook.py` (per-call), plus
-  `session-start.py`, `stop-hook.py`, `validate_plan.py`.
+  gitignored, regenerated from `repos.yaml` + `creds.env`. Stays at the repo
+  root (above the `app/` bind) so VS Code still discovers it.
+- `app/` — the only thing bind-mounted into `/workspace`; holds the
+  container-needed code and nothing mutable:
+  - `app/hooks/` — agent-agnostic gate: `pre-tool-hook.py` (per-call), plus
+    `session-start.py`, `stop-hook.py`, `validate_plan.py`.
+  - `app/plans/` — `schema.json` (field-by-field spec), `example-plan.yaml`.
 - `.claude/` — reference-agent wiring; swap for another agent's equivalent.
-- `plans/` — `schema.json` (field-by-field spec), `example-plan.yaml`.
 - `scripts/` — `setup.sh`, `gen_devcontainer.py`, `research_access.py`,
-  `plan-promote.sh`, `approve-publish.sh`.
+  `plan-promote.sh`, `approve-publish.sh`. Host-side; stays at the repo root.
 - `examples/` — PAT scopes, AWS and Kubernetes read-only walkthroughs.
 - `target-state/`, `repos.yaml`, `research-access.yaml`, and your real
   `creds.env` — gitignored / outside the repo, per user.

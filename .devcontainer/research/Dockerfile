@@ -58,6 +58,17 @@ RUN python3 -m pip install --break-system-packages pyyaml jsonschema
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
 RUN chmod +x /usr/local/bin/init-firewall.sh
 
+# Bake the lifecycle script + agent settings + slash commands into the image.
+# /workspace is bound to the repo's app/ subfolder (so research-state stays out
+# of the bind), which means the repo's .devcontainer/ is NOT visible inside the
+# container — the old `bash /workspace/.devcontainer/research/...` lifecycle
+# command can no longer find these files. COPY them to fixed system paths
+# instead (the build context is .devcontainer/research/), like init-firewall.sh.
+COPY post-create.sh /usr/local/bin/research-post-create.sh
+COPY agent-settings.json /usr/local/share/research-agent-settings.json
+COPY commands /usr/local/share/research-commands
+RUN chmod +x /usr/local/bin/research-post-create.sh
+
 # Allow the 'dev' user to run ONLY the firewall script as root, without a password.
 # This is the only sudo capability granted to dev — needed because iptables/ipset
 # require root, but we don't want dev to have general root.

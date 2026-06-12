@@ -4,7 +4,8 @@ stop-hook.py — Stop hook for the apply env (reference agent: Claude Code).
 
 Reads the persistent tally written by pre-tool-hook.py and prints a human-readable
 summary of the CURRENT SESSION at the end of each assistant turn. The tally
-itself lives under target-state/<slug>/audit/tally.jsonl and persists across
+itself lives in the host's state/audit/tally.jsonl (bound into the container at
+/workspace/target-state/audit/) and persists across
 container restarts and across sessions — entries carry session_id and we
 filter to the current session for the per-turn summary.
 

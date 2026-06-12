@@ -29,7 +29,7 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app" / "hooks"))
 
 from validate_plan import (  # noqa: E402
     branch_gate_violation,

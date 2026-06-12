@@ -17,8 +17,8 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCHEMA="${REPO_ROOT}/plans/schema.json"
-VALIDATOR="${REPO_ROOT}/hooks/validate_plan.py"
+SCHEMA="${REPO_ROOT}/app/plans/schema.json"
+VALIDATOR="${REPO_ROOT}/app/hooks/validate_plan.py"
 GOOD_DIR="${REPO_ROOT}/tests/plans/good"
 BAD_DIR="${REPO_ROOT}/tests/plans/bad"
 

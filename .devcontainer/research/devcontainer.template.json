@@ -10,7 +10,7 @@
   ],
 
   "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "workspaceMount": "source=${localWorkspaceFolder}/app,target=/workspace,type=bind,consistency=cached",
 
   "mounts": [
     "source=agent-auth-research,target=/home/dev/.claude,type=volume",
@@ -32,7 +32,8 @@
     "no_proxy": "localhost,127.0.0.1,::1"
   },
 
-  "postCreateCommand": "bash /workspace/.devcontainer/research/post-create.sh",
+  "//baked": "post-create.sh is COPY'd into the image (see Dockerfile) because /workspace is now bound to the app/ subfolder — the repo's .devcontainer/ lives ABOVE that bind and is not visible inside the container.",
+  "postCreateCommand": "bash /usr/local/bin/research-post-create.sh",
   "//postStart": "Re-arm the egress firewall on every container START (not just create). postCreateCommand runs once at creation; a plain restart (Docker/daemon/machine reboot) skips it, leaving squid dead and iptables wiped while HTTPS_PROXY still points at :3128 — proxied clients then fail with ECONNREFUSED. init-firewall.sh is idempotent, so re-running it here is safe.",
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh \"${ALL_ALLOWED_DOMAINS:-}\"",
 

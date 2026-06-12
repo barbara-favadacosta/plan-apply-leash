@@ -195,7 +195,7 @@ fi
 
 # ─── Project layout sanity ────────────────────────────────────────────────
 section "Harness layout sanity"
-for d in .devcontainer/research .devcontainer/apply hooks plans scripts; do
+for d in .devcontainer/research .devcontainer/apply app/hooks app/plans scripts; do
   if [ -d "${d}" ]; then ok "${d}/ exists"; else bad "${d}/ missing"; fi
 done
 

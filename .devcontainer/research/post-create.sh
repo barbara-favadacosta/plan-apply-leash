@@ -9,13 +9,16 @@ sudo /usr/local/bin/init-firewall.sh "${ALL_ALLOWED_DOMAINS:-}"
 
 # Install env-specific settings into the agent's user-level config dir (in the
 # agent-auth-research volume). ~/.claude is the reference agent's config home.
+# The settings file and slash commands are baked into the image (see Dockerfile)
+# because the repo's .devcontainer/ is outside the app/→/workspace bind and so
+# not visible inside the container.
 mkdir -p ~/.claude
-cp /workspace/.devcontainer/research/agent-settings.json ~/.claude/settings.json
+cp /usr/local/share/research-agent-settings.json ~/.claude/settings.json
 
 # Install env-specific slash commands into the agent's personal command dir.
 # (~/.claude lives in the agent-auth-research volume, same as settings.json above.)
 mkdir -p ~/.claude/commands
-cp -r /workspace/.devcontainer/research/commands/. ~/.claude/commands/
+cp -r /usr/local/share/research-commands/. ~/.claude/commands/
 
 # Ensure the research workspace dirs exist, including the always-present
 # `default` project used when the user never runs `/project`.

@@ -20,8 +20,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Apply-env audit dir: lives under the host-mounted target-state/, so the tally
-# and compiled allowlist persist across container rebuilds and sessions.
+# Apply-env audit dir: the host's state/audit/ bound in here, so the tally and
+# compiled allowlist persist across container rebuilds and sessions. The mount
+# TARGET keeps the historical /workspace/target-state/audit path (the host SOURCE
+# is state/audit/ — see scripts/gen_devcontainer.py), so this constant is unchanged.
 _AUDIT_DIR = "/workspace/target-state/audit"
 
 DEFAULT_COMPILED_PATH = f"{_AUDIT_DIR}/compiled-allowlist.json"

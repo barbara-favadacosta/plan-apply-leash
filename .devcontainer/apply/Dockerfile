@@ -53,6 +53,17 @@ RUN python3 -m pip install --break-system-packages pyyaml jsonschema
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
 RUN chmod +x /usr/local/bin/init-firewall.sh
 
+# Bake the lifecycle scripts + agent settings into the image. /workspace is bound
+# to the repo's app/ subfolder (so research-state stays out of the bind), which
+# means the repo's .devcontainer/ is NOT visible inside the container — the old
+# `bash /workspace/.devcontainer/apply/...` lifecycle commands can no longer find
+# these files. COPY them to fixed system paths instead (the build context is
+# .devcontainer/apply/, so they're COPY-able), exactly like init-firewall.sh.
+COPY post-create.sh /usr/local/bin/apply-post-create.sh
+COPY load-plan.sh   /usr/local/bin/load-plan.sh
+COPY agent-settings.json /usr/local/share/apply-agent-settings.json
+RUN chmod +x /usr/local/bin/apply-post-create.sh /usr/local/bin/load-plan.sh
+
 # Allow the 'dev' user to run ONLY the firewall script as root.
 RUN echo "${USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/init-firewall \
  && chmod 0440 /etc/sudoers.d/init-firewall
