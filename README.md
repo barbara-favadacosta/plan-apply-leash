@@ -48,7 +48,7 @@ a contained change — to a single repo, or the same change across many. The swe
 spot is a repeated edit across a lot of services (say, a shared config bump
 across 15 of them, one pull request each), without you approving every step.
 
-**Skip it** for toy projects; for one-off sessions where approving each action
+**Skip it** for one-off sessions where approving each action
 is fine; for untrusted code (use a full virtual machine instead — Docker shares
 the host's kernel, so it isn't a true sandbox); or for multi-user setups (this is
 built for a single person).
@@ -108,13 +108,16 @@ add one entry per credential. There are two styles: config-only
 ([Tier A](research-access.yaml.example), for plain HTTP APIs) and "catalog CLIs"
 (Tier B, which also installs a command-line tool into the container). The apply
 env never gets any of this. Making the credential genuinely read-only is up to
-you — here are end-to-end walkthroughs for
-[AWS](examples/aws-research-setup.md) and
-[Kubernetes](examples/kubectl-readonly-rbac.yaml).
+you — see the end-to-end [AWS walkthrough](examples/aws-research-setup.md)
+(with a ready-to-adapt read-only [IAM policy](examples/iam-research-policy.json)),
+and a read-only [Kubernetes RBAC manifest](examples/kubectl-readonly-rbac.yaml).
 
-**5. Verify** — `scripts/setup.sh` checks everything and regenerates the
-devcontainers; expect all-green. Re-run it and **Rebuild Container** after
-editing any config.
+**5. Generate the devcontainers (required)** — run `scripts/setup.sh`. This
+is not just a check: `devcontainer.json` is gitignored and *only this script
+generates it* from `repos.yaml` + `creds.env`. Skip this and "Reopen in
+Container" (step 6) has nothing to open. It also validates your config and
+should come up all-green. Re-run it and **Rebuild Container** after editing any
+config.
 
 **6. Open** the folder in VS Code → **Reopen in Container**. VS Code shows a
 picker listing both envs — choose **leash-research** for now (you'll pick
@@ -193,9 +196,9 @@ pick up the freshly-promoted plan (the `postAttachCommand` recompiles
 `current.yaml` into the enforced allowlist on every attach), then run `claude` and
 tell it to carry out `current.yaml`. For each in-scope repo it creates the plan's
 branch first (its first edit is blocked until it does), then edits, tests, and
-commits — all on its own. Before each `Bash`, `Edit`, or `Write`, a check (the
-per-call hook) compares the action against the per-repo allowlist and enforces
-branch-first, and every action is recorded to `state/audit/tally.jsonl`.
+commits — all on its own. Before each `Bash`, `Edit`, `Write`, or
+`NotebookEdit`, a check (the per-call hook) compares the action against the
+per-repo allowlist and enforces branch-first, and every action is recorded to `state/audit/tally.jsonl`.
 
 > **Reload vs. rebuild.** A plain **Reload Window** is all it takes to load a
 > newly-promoted plan — no rebuild between plans. You only need **Rebuild
@@ -205,8 +208,9 @@ branch-first, and every action is recorded to `state/audit/tally.jsonl`.
 > running the previous plan — fix the plan, re-promote, and reload.
 
 Branching, editing, and committing run autonomously, but **publishing is held
-back on purpose**: `git push` and `gh pr create` stay **paused** until you run
-`scripts/approve-publish.sh` on the host. So when the agent stops and asks, your
+back on purpose**: every command that pushes work out — `git push`, `gh pr
+create`/`ready`/`edit`/`comment`, and `gh release` — stays **paused** until you
+run `scripts/approve-publish.sh` on the host. So when the agent stops and asks, your
 changes are already committed on the plan's branch in each repo — you review
 those local commits, then approve. That script creates a small marker file the
 agent itself isn't allowed to create — which is what makes the pause real. You
@@ -219,9 +223,9 @@ and rebuild.
 
 > **What gets blocked.** Each entry in `allowed_command_prefixes` has to match
 > the *start* of a single, simple command. Characters that let one command chain
-> into another are rejected — no `;`, `&&`, `|`, `>`, `` ` ``, `$(…)`, or
-> newlines. (Otherwise an allowed `npm test` could sneak in `npm test &&
-> curl…|sh`.) Any edit outside the plan, or any command that doesn't match, is
+> into another are rejected — no `;`, `&&`, `|`, `>`, `<`, `<(…)`, `` ` ``,
+> `$(…)`, or newlines. (Otherwise an allowed `npm test` could sneak in `npm test
+> && curl…|sh`.) Any edit outside the plan, or any command that doesn't match, is
 > blocked, reported back to the agent, and logged. To move forward, either widen
 > the plan and re-promote it, or stop the agent — it's trying to do more than the
 > plan allows.
@@ -305,7 +309,8 @@ single repo.
 - `.claude/` — reference-agent wiring; swap for another agent's equivalent.
 - `scripts/` — `setup.sh`, `gen_devcontainer.py`, `research_access.py`,
   `plan-promote.sh`, `approve-publish.sh`. Host-side; stays at the repo root.
-- `examples/` — PAT scopes, AWS and Kubernetes read-only walkthroughs.
+- `examples/` — PAT scopes, the AWS read-only walkthrough (`aws-research-setup.md`)
+  and its IAM policy, and a read-only Kubernetes RBAC manifest.
 - `state/` — mutable per-target state (research drafts, approved plans, audit).
   A sibling of `app/`, so it's OUTSIDE the workspace bind; each env mounts only
   the subtrees it needs (research never sees approved-plans/audit, apply never
