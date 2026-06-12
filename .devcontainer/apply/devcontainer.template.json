@@ -25,6 +25,7 @@
     "APPLY_TALLY_PATH": "/workspace/target-state/audit/tally.jsonl",
     "APPLY_REQUIRE_PUBLISH_APPROVAL": "1",
     "APPLY_PUBLISH_APPROVED_FILE": "/workspace/target-state/audit/publish-approved",
+    "APPLY_CONVENTIONS_PATH": "/workspace/apply-conventions.md",
 
     "//proxy": "Default egress route: the squid hostname-allowlist proxy started by init-firewall.sh. CLIs (gh, git, curl) honor these and so reach GitHub regardless of its CDN IP rotation. Set in both cases so a tool that reads only one form still routes correctly.",
     "HTTP_PROXY": "http://127.0.0.1:3128",

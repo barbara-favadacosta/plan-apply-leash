@@ -64,6 +64,25 @@ from research_access import load as load_research_access, ResearchAccessError, R
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPOS_YAML = REPO_ROOT / "repos.yaml"
 RESEARCH_ACCESS_YAML = REPO_ROOT / "research-access.yaml"
+# Trusted house-style file mounted READ-ONLY into the apply container, surfaced
+# to the agent by session-start.py. Committed to the harness (not user-specific),
+# so it always exists; mounted read-only so the agent can't rewrite its own rules.
+APPLY_CONVENTIONS_FILE = REPO_ROOT / "apply-conventions.md"
+
+# Git identity the apply agent commits as. The apply agent commits but the base
+# image sets no user.name/email; post-create.sh configures it from these and
+# fails closed if unset. Sourced from creds.env (GIT_IDENTITY_*); not a secret,
+# so baked into containerEnv (not the --env-file).
+#
+# The DEFAULT is a NEUTRAL harness identity on purpose — set your real (corporate)
+# identity in your private creds.env. Two reasons: (1) gen_devcontainer.py is
+# committed, so a personal email here would leak into the repo and make every
+# operator's agent commit as that person; (2) honest provenance — an unattended
+# agent commit should read as "the apply agent", not silently impersonate a human
+# who never reviewed it. The noreply.github.com address is GitHub's convention for
+# a non-personal author and won't link to anyone's account.
+DEFAULT_GIT_IDENTITY_NAME = "plan-apply-leash apply agent"
+DEFAULT_GIT_IDENTITY_EMAIL = "apply-agent@users.noreply.github.com"
 # Mutable per-target state. Lives at the repo root, a SIBLING of app/ — and
 # /workspace is bound to app/, so state/ is NOT inside the workspace bind. Each
 # env gets only the subtrees it needs, mounted explicitly below with the right
@@ -112,6 +131,7 @@ TARGETS = [
             ("audit",          "/workspace/target-state/audit",          False),  # RW
         ],
         "mount_repos_yaml": True,  # load-plan's --apply-repos allowlist re-check
+        "mount_conventions": True,  # read-only house-style file (see APPLY_CONVENTIONS_FILE)
     },
 ]
 
@@ -378,10 +398,33 @@ def render(
     if target.get("mount_repos_yaml"):
         mounts.append(f"source={REPOS_YAML},target=/workspace/repos.yaml,type=bind,readonly,consistency=cached")
 
+    # Trusted house-style file: read-only so the apply agent can't rewrite the
+    # conventions it's told to follow. Committed to the harness, so it exists.
+    if target.get("mount_conventions"):
+        if not APPLY_CONVENTIONS_FILE.is_file():
+            die(f"missing {APPLY_CONVENTIONS_FILE.relative_to(REPO_ROOT)} — it backs the apply house-conventions injection")
+        mounts.append(
+            f"source={APPLY_CONVENTIONS_FILE},target=/workspace/apply-conventions.md,type=bind,readonly,consistency=cached"
+        )
+
     # Research focus scope: newline-joined owner/repo list the agent should stay
     # within. Only set when non-empty; unset means "roam whatever the PAT allows".
     if target["name"] == "research" and research_scope:
         container_env["RESEARCH_REPO_SCOPE"] = "\n".join(research_scope)
+
+    # Apply git identity: the agent commits, so configure who it commits as.
+    # post-create.sh reads GIT_IDENTITY_* (fail-closed) to set user.name/email;
+    # GIT_AUTHOR_*/GIT_COMMITTER_* are a deterministic fallback if ~/.gitconfig is
+    # ever missing. Sourced from creds.env, defaulting to the corporate identity.
+    if target["name"] == "apply":
+        ident_name = env_clean("GIT_IDENTITY_NAME") or DEFAULT_GIT_IDENTITY_NAME
+        ident_email = env_clean("GIT_IDENTITY_EMAIL") or DEFAULT_GIT_IDENTITY_EMAIL
+        container_env["GIT_IDENTITY_NAME"] = ident_name
+        container_env["GIT_IDENTITY_EMAIL"] = ident_email
+        container_env["GIT_AUTHOR_NAME"] = ident_name
+        container_env["GIT_AUTHOR_EMAIL"] = ident_email
+        container_env["GIT_COMMITTER_NAME"] = ident_name
+        container_env["GIT_COMMITTER_EMAIL"] = ident_email
 
     config["mounts"] = mounts
     config["containerEnv"] = container_env

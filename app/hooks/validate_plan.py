@@ -207,10 +207,16 @@ def command_shell_violation(command: str) -> str | None:
 #
 # Commands are classified by their git/gh subcommand, read AFTER skipping
 # `git -C <path>` and the other global options, into:
-#   "local"   — autonomous, no approval: create-branch, add, commit, and
-#               read-only inspection (status/diff/log/show/rev-parse/branch).
+#   "local"   — autonomous, no approval: create-branch, add, commit, fetch, and
+#               read-only inspection (status/diff/log/show/rev-parse/branch/
+#               ls-files/ls-tree/cat-file/describe/shortlog/blame). For gh:
+#               read-only PR/repo queries (gh pr view/status/diff/checks/list,
+#               gh repo view) — none of these mutate anything.
 #   "publish" — allowed, but HELD by the publish-approval gate in
-#               pre-tool-hook.py: git push, gh pr create/ready, gh release.
+#               pre-tool-hook.py: git push, gh pr create/ready/edit/comment,
+#               gh release. gh pr edit/comment only touch an already-open PR,
+#               which exists only AFTER approval — gating them costs nothing and
+#               stops them firing pre-approval.
 #   None      — not a recognized git/gh workflow verb; falls through to the
 #               plan's allowed_command_prefixes (e.g. npm test, terraform fmt).
 #
@@ -218,7 +224,10 @@ def command_shell_violation(command: str) -> str | None:
 # rm, and checkout/switch/restore of PATHS — each can destroy uncommitted work
 # in the user's REAL, bind-mounted repos. A plan may still grant them explicitly.
 _GIT_GLOBAL_OPTS_WITH_VALUE = {"-C", "--git-dir", "--work-tree", "-c", "--namespace", "--config-env"}
-_GIT_LOCAL_SUBCMDS = {"add", "commit", "status", "diff", "log", "show", "rev-parse", "branch"}
+_GIT_LOCAL_SUBCMDS = {
+    "add", "commit", "status", "diff", "log", "show", "rev-parse", "branch",
+    "fetch", "ls-files", "ls-tree", "cat-file", "describe", "shortlog", "blame",
+}
 _GIT_BRANCH_CREATE_FLAGS = {"-b", "-B", "-c", "-C"}
 
 # Global options that inject inline git config. core.pager / diff.external /
@@ -282,7 +291,12 @@ def classify_git_command(command: str) -> str | None:
 
     if prog == "gh":
         nonopt = [t for t in toks[1:] if not t.startswith("-")]
-        if nonopt[:2] in (["pr", "create"], ["pr", "ready"]):
+        pair = nonopt[:2]
+        if pair in (["pr", "view"], ["pr", "status"], ["pr", "diff"],
+                    ["pr", "checks"], ["pr", "list"], ["repo", "view"]):
+            return "local"
+        if pair in (["pr", "create"], ["pr", "ready"],
+                    ["pr", "edit"], ["pr", "comment"]):
             return "publish"
         if nonopt[:1] == ["release"]:
             return "publish"

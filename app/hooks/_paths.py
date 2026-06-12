@@ -30,6 +30,12 @@ DEFAULT_COMPILED_PATH = f"{_AUDIT_DIR}/compiled-allowlist.json"
 DEFAULT_TALLY_PATH = f"{_AUDIT_DIR}/tally.jsonl"
 DEFAULT_PUBLISH_APPROVED_FILE = f"{_AUDIT_DIR}/publish-approved"
 
+# House-style conventions surfaced to the apply agent at session start. A
+# trusted, harness-owned file mounted READ-ONLY (un-writable by the agent — see
+# the apply settings deny list), so it's a safe injection point for code/commit/
+# PR conventions, unlike the agent-authored plan.
+DEFAULT_APPLY_CONVENTIONS_PATH = "/workspace/apply-conventions.md"
+
 
 def compiled_path() -> Path:
     """The compiled allowlist validate_plan.py wrote during container startup;
@@ -47,6 +53,12 @@ def publish_approved_file() -> Path:
     """Sentinel a human creates (scripts/approve-publish.sh) to lift the publish
     gate. post-create.sh removes it at startup, so approval is per apply session."""
     return Path(os.environ.get("APPLY_PUBLISH_APPROVED_FILE", DEFAULT_PUBLISH_APPROVED_FILE))
+
+
+def apply_conventions_path() -> Path:
+    """Trusted house-style file (code patterns, commit/PR conventions) the apply
+    session-start hook injects. Read-only mount; the agent can't rewrite it."""
+    return Path(os.environ.get("APPLY_CONVENTIONS_PATH", DEFAULT_APPLY_CONVENTIONS_PATH))
 
 
 def require_publish_approval() -> bool:

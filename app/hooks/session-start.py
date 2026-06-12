@@ -201,10 +201,21 @@ def research_main() -> None:
         banner_scope = f"  GitHub scope: ONLY {', '.join(scope)}"
     else:
         github_scope = (
-            "  - You may also reach any repo your GitHub PAT allows via `gh api`,\n"
-            "    `gh search`, and `git clone`."
+            "  - GitHub READ SCOPE: your PAT can read EVERY repository it has\n"
+            "    access to — across ALL orgs — not just the few mounted under\n"
+            "    /workspace/repos. Those local mounts are a CONVENIENCE SUBSET,\n"
+            "    not the boundary. Never assume a repo is out of reach because it\n"
+            "    isn't mounted. DISCOVER before you assume — list what you can\n"
+            "    actually see, then work from that:\n"
+            "        - orgs you can reach:  gh api user/orgs --jq '.[].login'\n"
+            "        - repos in an org:     gh repo list <org> --limit 1000 --json nameWithOwner\n"
+            "        - search across all:   gh search repos <query>\n"
+            "    Use `gh api`, `gh search`, and `git clone` freely for READS."
         )
-        banner_scope = "  GitHub scope: any repo the PAT allows (no research: scope set)"
+        banner_scope = (
+            "  GitHub scope: ALL repos the PAT can read (mounts are a convenience "
+            "subset — discover with `gh repo list <org>`)"
+        )
 
     banner(
         f"[research env] read-only credentials in effect.\n"
@@ -289,9 +300,32 @@ def apply_main() -> None:
         files = cfg.get("file_paths", [])
         branch = cfg.get("branch", "?")
         pr_title = cfg.get("pr_title", "?")
+        pr_body = cfg.get("pr_body")
+        pr_body_line = (
+            "set — use it VERBATIM via `gh pr create --body-file` (write it to a "
+            "temp file and pass that; do NOT paraphrase or regenerate it)"
+            if pr_body else
+            "(none — follow the PR template in HOUSE CONVENTIONS below)"
+        )
         context_repo_lines.append(
             f"  • {slug} ({cfg.get('github', '?')}, branch {branch}, PR title {pr_title!r}):\n"
-            f"      file_paths: {fmt_list(files, 20)}"
+            f"      file_paths: {fmt_list(files, 20)}\n"
+            f"      pr_body:    {pr_body_line}"
+        )
+
+    # House conventions: a trusted, harness-owned, read-only file (the agent can't
+    # rewrite it — see the apply settings deny list), so it's a safe injection
+    # point for code/commit/PR style, unlike the agent-authored plan. Tolerate a
+    # missing file (OSError) → no conventions block, rather than failing the hook.
+    conventions_block = ""
+    try:
+        conventions = _paths.apply_conventions_path().read_text().strip()
+    except OSError:
+        conventions = ""
+    if conventions:
+        conventions_block = (
+            "\n\nHOUSE CONVENTIONS (trusted, read-only — apply to EVERY commit "
+            "message and PR you create this session):\n" + conventions
         )
 
     context_body = (
@@ -307,10 +341,12 @@ def apply_main() -> None:
         + ("\n\nPUBLISH CHECKPOINT: branch → edit → commit is autonomous, but git push "
            "and gh pr create are paused until the user approves (scripts/approve-publish.sh). "
            "When every in-scope repo is committed, STOP, summarize per repo, and ASK to "
-           "publish. Pushes may only target the branch the plan declared."
+           "publish. After approval, push (pushes may only target the branch the plan "
+           "declared) and open the PR with the repo's pr_title and, when set, its pr_body "
+           "via `gh pr create --body-file`."
            if publish_gate else "")
     )
-    emit_context(APPLY_CONTEXT_HEADER + context_body)
+    emit_context(APPLY_CONTEXT_HEADER + context_body + conventions_block)
 
 
 def main() -> None:

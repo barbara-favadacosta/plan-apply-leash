@@ -13,6 +13,15 @@ sudo /usr/local/bin/init-firewall.sh "${ALLOWED_DOMAINS_EXTRA:-}"
 mkdir -p ~/.claude
 cp /usr/local/share/apply-agent-settings.json ~/.claude/settings.json
 
+# Configure the git identity the apply agent commits as. The base image sets no
+# user.name/email, so commits would error or prompt; the agent can't fix it
+# itself because `git config` is deliberately not auto-allowed by the hook. The
+# values come from creds.env via containerEnv (GIT_IDENTITY_*, baked by
+# gen_devcontainer.py). Fail closed (`:?`) so a commit never silently lands under
+# a wrong/personal identity.
+git config --global user.name  "${GIT_IDENTITY_NAME:?GIT_IDENTITY_NAME unset — set it in creds.env and re-run scripts/setup.sh}"
+git config --global user.email "${GIT_IDENTITY_EMAIL:?GIT_IDENTITY_EMAIL unset — set it in creds.env and re-run scripts/setup.sh}"
+
 # Ensure audit dir exists (for the compiled allowlist + tally).
 mkdir -p /workspace/target-state/audit
 

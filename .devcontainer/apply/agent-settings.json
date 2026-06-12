@@ -16,6 +16,8 @@
       "Edit(/workspace/target-state/**)",
       "Edit(/workspace/.env)",
       "Edit(/workspace/.env.*)",
+      "Write(/workspace/apply-conventions.md)",
+      "Edit(/workspace/apply-conventions.md)",
       "Bash(curl * | *sh*)",
       "Bash(wget * | *sh*)",
       "Bash(rm -rf /*)",
