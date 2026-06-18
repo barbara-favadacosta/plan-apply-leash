@@ -142,8 +142,8 @@ ask it to investigate and draft a plan. For example:
 > bump it to v2 across both.*
 
 Drafts are organized into per-project subfolders. By default the agent writes to
-`state/research/drafts/default/<plan_id>.yaml`; run `/project <name>` in
-the session to switch to a named project (`drafts/<name>/…` instead). See the
+`drafts/default/<plan_id>.yaml` under its research-state tree; run `/project <name>`
+in the session to switch to a named project (`drafts/<name>/…` instead). See the
 [schema](app/plans/schema.json) for every field and [example-plan.yaml](app/plans/example-plan.yaml)
 for a full plan. Bypass is safe here — the env is read-only.
 
@@ -180,16 +180,22 @@ isn't a step the agent might skip; it's the gate the first edit hits.
 take the research window out of its container):
 
 ```bash
-scripts/plan-promote.sh <plan_id>.yaml                       # default project
-scripts/plan-promote.sh state/research/drafts/<name>/<plan_id>.yaml  # named project
+scripts/plan-promote.sh <plan_id>.yaml            # default project
+scripts/plan-promote.sh <name>/<plan_id>.yaml     # named project (project-relative)
 ```
 
-A bare filename resolves against the `default/` project. For a draft in a named
-project, pass its full path. The script validates the draft, previews the
-compiled per-repo allowlist, and diffs it against the current plan. It then asks
-you to confirm and atomically promotes to
-`state/approved-plans/current.yaml`. **This is the trust boundary** — your
-review catches coordination mistakes no hook can.
+A bare filename resolves against the `default/` project; a `<project>/<file>`
+path resolves against the drafts dir. The script validates the draft, previews
+the compiled per-repo allowlist, and diffs it against the current plan. It then
+asks you to confirm and atomically promotes to the approved plan
+(`current.yaml`). **This is the trust boundary** — your review catches
+coordination mistakes no hook can.
+
+> The draft and approved-plan directories live under
+> `state/by-token/<fingerprint>/…` — state is namespaced per GitHub token (see
+> the Repository tour). `plan-promote.sh` resolves the right tree from your
+> creds automatically, so you pass bare/project-relative filenames, not full
+> `state/…` paths.
 
 **3 · Apply** — in the **leash-apply** window, run **Developer: Reload Window** to
 pick up the freshly-promoted plan (the `postAttachCommand` recompiles
@@ -293,8 +299,8 @@ single repo.
 - **`BLOCKED: outside scope.file_paths`** → this means the hook is doing its job.
   Either widen the plan and re-promote it, or stop the agent. Don't hand-edit the
   generated allowlist — it's rebuilt from the plan every time apply starts.
-- **Audit log huge** → `state/audit/tally.jsonl` is append-only; archive
-  it.
+- **Audit log huge** → the audit `tally.jsonl` (under
+  `state/by-token/<fp>/audit/`) is append-only; archive it.
 
 ## Repository tour
 
@@ -314,6 +320,12 @@ single repo.
 - `state/` — mutable per-target state (research drafts, approved plans, audit).
   A sibling of `app/`, so it's OUTSIDE the workspace bind; each env mounts only
   the subtrees it needs (research never sees approved-plans/audit, apply never
-  sees research/). Gitignored, per user.
+  sees research/). Gitignored, per user. **Namespaced per GitHub token** under
+  `state/by-token/<fingerprint>/` (research subtree keyed by the research token,
+  approved-plans/audit by the apply token): rotating a token swaps in a fresh
+  tree, and rotating back remounts the cached one — nothing is deleted. The
+  container mount targets (`/workspace/target-state/…`) are unchanged; only the
+  host source moves, so the swap is invisible inside the container. Delete a
+  `by-token/<fp>/` dir to discard that token's cached state.
 - `repos.yaml`, `research-access.yaml`, and your real `creds.env` —
   gitignored / outside the repo, per user.

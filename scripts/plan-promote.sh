@@ -15,9 +15,14 @@
 # where <draft> can be:
 #   - an absolute path to a draft yaml
 #   - a path relative to the cwd
-#   - just the filename inside state/research/drafts/ (also falls back to
-#     the default/ project). For a draft in a NAMED project subfolder, pass its
-#     full path — named projects are not auto-searched.
+#   - just the filename inside the drafts dir (also falls back to the default/
+#     project), or a "<project>/<filename>" relative to it. For a draft in a
+#     NAMED project, the project-relative form or its full path both work.
+#
+# State is namespaced per GitHub token (state/by-token/<fp>/…), so the drafts and
+# approved-plans dirs are resolved from your current tokens via _state_lib.sh —
+# don't hardcode state/research/drafts paths; pass a bare or project-relative
+# filename and let the script find it under the active token's tree.
 
 set -euo pipefail
 
@@ -25,25 +30,35 @@ DRAFT_ARG="${1:-}"
 if [ -z "${DRAFT_ARG}" ]; then
   cat >&2 <<EOF
 usage: $0 <draft-plan>
-  draft can be absolute, cwd-relative, or just a filename within
-  state/research/drafts/ (bare filenames also fall back to the
-  default/ project). For a draft in a named project, pass its full path.
+  draft can be absolute, cwd-relative, or relative to the active token's drafts
+  dir — a bare filename (falls back to the default/ project) or "<project>/<file>".
 
 examples:
-  $0 state/research/drafts/2026-05-22-bump-logger.yaml
-  $0 state/research/drafts/myproj/2026-05-22-bump-logger.yaml  # named project (full path)
-  $0 2026-05-22-bump-logger.yaml                              # resolved against drafts/ then drafts/default/
+  $0 2026-05-22-bump-logger.yaml          # resolved against drafts/ then drafts/default/
+  $0 myproj/2026-05-22-bump-logger.yaml   # named project, relative to the drafts dir
 EOF
   exit 64
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_ROOT}"
+# shellcheck source=scripts/_state_lib.sh
+source "${REPO_ROOT}/scripts/_state_lib.sh"
 
 SCHEMA="${REPO_ROOT}/app/plans/schema.json"
 VALIDATOR="${REPO_ROOT}/app/hooks/validate_plan.py"
-DRAFTS_DIR="${REPO_ROOT}/state/research/drafts"
-APPROVED_DIR="${REPO_ROOT}/state/approved-plans"
+
+# Drafts come from the RESEARCH token's tree; the approved plan lands in the
+# APPLY token's tree — each side keyed by the token its container uses.
+RESEARCH_STATE="$(leash_state_root research)" || true
+APPLY_STATE="$(leash_state_root apply)" || true
+if [ -z "${RESEARCH_STATE}" ] || [ -z "${APPLY_STATE}" ]; then
+  echo "✗ could not resolve the per-token state dirs from your creds file." >&2
+  echo "  Check GH_TOKEN_RESEARCH_FILE / GH_TOKEN_APPLY_FILE, then re-run scripts/setup.sh." >&2
+  exit 69
+fi
+DRAFTS_DIR="${RESEARCH_STATE}/research/drafts"
+APPROVED_DIR="${APPLY_STATE}/approved-plans"
 HISTORY_DIR="${APPROVED_DIR}/history"
 CURRENT="${APPROVED_DIR}/current.yaml"
 
@@ -59,14 +74,14 @@ elif [ -f "${DRAFTS_DIR}/default/${DRAFT_ARG}" ]; then
   # pass their full path to avoid ambiguity between same-named drafts.
   DRAFT="${DRAFTS_DIR}/default/${DRAFT_ARG}"
   echo "→ resolved bare filename against the default project: ${DRAFT#${REPO_ROOT}/}" >&2
-  echo "  (for a named project, pass the full path, e.g." >&2
-  echo "   $0 state/research/drafts/<project>/${DRAFT_ARG})" >&2
+  echo "  (for a named project, use the project-relative form, e.g." >&2
+  echo "   $0 <project>/${DRAFT_ARG})" >&2
 else
   echo "✗ draft not found at: ${DRAFT_ARG}" >&2
   echo "  also tried: ${DRAFTS_DIR}/${DRAFT_ARG}" >&2
   echo "  also tried: ${DRAFTS_DIR}/default/${DRAFT_ARG}" >&2
-  echo "  for a draft inside a named project, pass its full path:" >&2
-  echo "    $0 state/research/drafts/<project>/${DRAFT_ARG}" >&2
+  echo "  for a draft inside a named project, use the project-relative form:" >&2
+  echo "    $0 <project>/${DRAFT_ARG}" >&2
   exit 66
 fi
 
@@ -163,7 +178,7 @@ NEW_TMP="${APPROVED_DIR}/.current.yaml.new"
 cp "${DRAFT}" "${NEW_TMP}"
 mv -f "${NEW_TMP}" "${CURRENT}"
 
-echo "✓ promoted to state/approved-plans/current.yaml"
+echo "✓ promoted to ${CURRENT#${REPO_ROOT}/}"
 echo "→ in the apply window, run 'Developer: Reload Window' to pick up the new plan"
 echo "  (Rebuild Container is only needed after re-running setup.sh, which"
 echo "   regenerates devcontainer.json)"

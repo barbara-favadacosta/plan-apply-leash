@@ -99,9 +99,14 @@ class StateMountTest(unittest.TestCase):
         self.tmp = Path(self._tmp.name)
         self.gen_dir = self.tmp / "gen"
         self.gen_dir.mkdir()
+        # Redirect STATE_ROOT so render() scaffolds the per-token state tree into
+        # the temp dir rather than the real repo state/.
+        self._orig_state_root = gd.STATE_ROOT
+        gd.STATE_ROOT = self.tmp / "state"
         os.environ.pop("ALLOWED_DOMAINS_EXTRA", None)
 
     def tearDown(self):
+        gd.STATE_ROOT = self._orig_state_root
         self._tmp.cleanup()
 
     def _render(self, name: str) -> dict:

@@ -20,8 +20,11 @@ so $HOME and quoting are already expanded by the shell):
                              any platform; merged with each platform's allow_domains
                              and exported to the research container as the compiled
                              ALL_ALLOWED_DOMAINS that its firewall consumes
-    LEASH_CREDS              optional — path to creds.env; its parent/.generated
-                                        holds the derived secret files
+    LEASH_CREDS              optional — path to creds.env (pointers only); may be
+                                        in-tree since only app/ is mounted
+    LEASH_GENERATED_DIR      optional — where the real-token secret files are
+                                        written; defaults to ~/.config/plan-apply-leash/
+                                        .generated, kept out of the repo tree
 
 Read-only platform access (AWS, Kubernetes, anything else) for the RESEARCH env
 is declared in research-access.yaml, resolved by research_access.py into mounts,
@@ -49,6 +52,7 @@ Exit 0 on success. Non-zero on any validation error; stderr explains.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -146,10 +150,38 @@ def env_clean(name: str) -> str:
     return (os.environ.get(name) or "").strip()
 
 
+def token_fingerprint(token: str) -> str:
+    """Stable, non-reversible id for a GitHub token. Per-target state lives under
+    state/by-token/<fp>/, so rotating a token swaps in a fresh tree and rotating
+    back remounts the cached one (nothing is deleted). 16 hex chars of sha256:
+    enough to avoid collisions, far too short to be a useful token leak. Mirrored
+    in bash by scripts/_state_lib.sh:leash_token_fp — keep the two in sync; their
+    agreement is pinned by tests/test_state_fingerprint.py."""
+    return hashlib.sha256(token.strip().encode()).hexdigest()[:16]
+
+
+def write_state_label(state_base: Path, token: str) -> None:
+    """Drop a small human-readable note in a token's state dir so the otherwise
+    opaque by-token/<fp>/ directories are navigable. Records only the 8-char
+    token prefix (already echoed by setup.sh), never the token itself."""
+    try:
+        (state_base / ".token-info").write_text(
+            f"plan-apply-leash state for GitHub token {token.strip()[:8]}… "
+            f"(fingerprint {state_base.name}).\n"
+            "Rotating the token mounts a fresh sibling dir; rotating back remounts "
+            "this one.\nSafe to delete to discard this token's cached state.\n"
+        )
+    except OSError:
+        pass
+
+
 def generated_dir() -> Path:
-    creds = os.environ.get("LEASH_CREDS")
-    creds_path = Path(creds).expanduser() if creds else DEFAULT_CREDS
-    return creds_path.parent / ".generated"
+    # These files hold REAL token text, so they must live OUTSIDE the repo tree
+    # even when LEASH_CREDS points at an in-tree creds.env (which holds only
+    # pointers). Default to the home config dir, NOT the creds file's parent;
+    # override with LEASH_GENERATED_DIR if you really want them elsewhere.
+    override = os.environ.get("LEASH_GENERATED_DIR")
+    return Path(override).expanduser() if override else DEFAULT_CREDS.parent / ".generated"
 
 
 def resolve_token(file_var: str) -> str:
@@ -386,8 +418,17 @@ def render(
     # ${localWorkspaceFolder}/app workspace bind, so it can't be expressed
     # relative to it. The bind SOURCE must exist before launch (Docker otherwise
     # auto-creates it root-owned), so mkdir each here, owned by whoever runs this.
+    #
+    # The host source is namespaced by a fingerprint of THIS target's token:
+    # state/by-token/<fp>/<subtree>. Rotating the token points the SAME container
+    # mount target at a fresh host tree (and rotating back at the cached one) —
+    # the container-side path never changes, so nothing else in the harness cares.
+    state_base = STATE_ROOT / "by-token" / token_fingerprint(token)
+    if target.get("state_mounts"):
+        state_base.mkdir(parents=True, exist_ok=True)
+        write_state_label(state_base, token)
     for sub, container_target, readonly in target.get("state_mounts", []):
-        host = STATE_ROOT / sub
+        host = state_base / sub
         host.mkdir(parents=True, exist_ok=True)
         state_flags = "type=bind,readonly,consistency=cached" if readonly else "type=bind,consistency=cached"
         mounts.append(f"source={host},target={container_target},{state_flags}")

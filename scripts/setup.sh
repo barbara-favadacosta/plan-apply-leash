@@ -10,6 +10,9 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# shellcheck source=scripts/_state_lib.sh
+source "${REPO_ROOT}/scripts/_state_lib.sh"
+
 GREEN=$'\033[0;32m'; RED=$'\033[0;31m'; YEL=$'\033[0;33m'; DIM=$'\033[2m'; OFF=$'\033[0m'
 
 PASS=0; FAIL=0; WARN=0; SKIP=0
@@ -22,9 +25,21 @@ note() { printf "    %s%s%s\n" "${DIM}"  "$1" "${OFF}"; }
 
 section() { printf "\n${DIM}── %s ──${OFF}\n" "$1"; }
 
-# Single credentials file, kept OUTSIDE the workspace (so the research env can
-# never read the apply token). Override the location with $LEASH_CREDS.
-CREDS="${LEASH_CREDS:-$HOME/.config/plan-apply-leash/creds.env}"
+# Single credentials file. The repo root is a sibling of app/ (the only thing
+# bound into the containers), so an in-tree creds.env stays out of every
+# container — same as state/. Prefer it when present so you can edit creds in
+# the tree; otherwise fall back to ~/.config. $LEASH_CREDS overrides both.
+# This file holds only POINTERS — the real tokens, and the generated --env-file
+# secrets, stay in ~/.config and never enter the tree. The research env still
+# can't read the apply token: only app/ is mounted, and the secret env-files
+# live outside it. creds.env is gitignored, so editing it never dirties the repo.
+if [ -n "${LEASH_CREDS:-}" ]; then
+  CREDS="${LEASH_CREDS}"
+elif [ -f "${REPO_ROOT}/creds.env" ]; then
+  CREDS="${REPO_ROOT}/creds.env"
+else
+  CREDS="$HOME/.config/plan-apply-leash/creds.env"
+fi
 export LEASH_CREDS="${CREDS}"
 
 # ─── Docker engine ─────────────────────────────────────────────────────────
@@ -113,15 +128,39 @@ fi
 # Keeping it OUTSIDE the workspace bind is what lets each env mount only the
 # subtrees it needs — research never sees approved-plans/audit, apply never sees
 # research/. gen_devcontainer.py also mkdir's the per-env subtrees it mounts.
-section "State directory scaffolding"
-for sub in research/drafts research/clones research/notes approved-plans approved-plans/history audit; do
-  full="${REPO_ROOT}/state/${sub}"
-  if [ -d "${full}" ]; then
-    ok "state/${sub}/ exists"
-  else
-    mkdir -p "${full}" 2>/dev/null && ok "created state/${sub}/" || bad "could not create ${full}"
+#
+# State is namespaced PER GitHub token: state/by-token/<fp>/<subtree>, where <fp>
+# is a fingerprint of that env's token (research subtree by GH_TOKEN_RESEARCH,
+# approved-plans + audit by GH_TOKEN_APPLY). Rotating a token swaps in a fresh
+# tree; rotating back remounts the cached one. Nothing is deleted. The creds file
+# was sourced above, so the token-file pointers are available here.
+section "State directory scaffolding (per GitHub token)"
+
+# One-time move of any pre-namespacing flat layout into the current tokens' trees
+# so existing notes/plans/audit aren't orphaned. Idempotent; only moves when the
+# destination doesn't already exist.
+leash_migrate_legacy_state
+
+scaffold_state() {  # <target> <subdir>...
+  local target="$1"; shift
+  local root; root="$(leash_state_root "${target}")" || true
+  if [ -z "${root}" ]; then
+    warn "${target} GitHub token unresolved — skipping its state dirs (see the ${target} PAT check below)"
+    return
   fi
-done
+  note "${target} state → ${root#${REPO_ROOT}/}/  (live tree for the current ${target} token)"
+  local sub full
+  for sub in "$@"; do
+    full="${root}/${sub}"
+    if [ -d "${full}" ]; then
+      ok "${full#${REPO_ROOT}/}/ exists"
+    else
+      mkdir -p "${full}" 2>/dev/null && ok "created ${full#${REPO_ROOT}/}/" || bad "could not create ${full}"
+    fi
+  done
+}
+scaffold_state research research/drafts research/clones research/notes
+scaffold_state apply approved-plans approved-plans/history audit
 
 # ─── Research env: GitHub (required) ──────────────────────────────────────
 # creds.env stores a *path* to a file that holds the PAT, not the token itself.

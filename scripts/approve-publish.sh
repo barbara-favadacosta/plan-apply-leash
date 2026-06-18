@@ -16,7 +16,17 @@ if [ -n "${APPLY_PUBLISH_APPROVED_FILE:-}" ]; then
   SENTINEL="${APPLY_PUBLISH_APPROVED_FILE}"                    # inside the container
 else
   REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"               # on the host
-  SENTINEL="${REPO_ROOT}/state/audit/publish-approved"
+  # shellcheck source=scripts/_state_lib.sh
+  source "${REPO_ROOT}/scripts/_state_lib.sh"
+  # The audit dir is namespaced by the apply token (state/by-token/<fp>/audit),
+  # the same tree the apply container mounts at /workspace/target-state/audit.
+  APPLY_STATE="$(leash_state_root apply)" || true
+  if [ -z "${APPLY_STATE}" ]; then
+    echo "✗ could not resolve the apply state dir from your creds file." >&2
+    echo "  Check GH_TOKEN_APPLY_FILE, then re-run scripts/setup.sh." >&2
+    exit 69
+  fi
+  SENTINEL="${APPLY_STATE}/audit/publish-approved"
 fi
 
 mkdir -p "$(dirname "${SENTINEL}")"
